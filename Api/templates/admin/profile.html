@@ -70,46 +70,103 @@
 .strength-weak { background: #dc3545; }
 .strength-medium { background: #ffc107; }
 .strength-strong { background: #28a745; }
+
+/* Estados de error y carga */
+.error-state {
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+    padding: 1rem;
+    border-radius: 8px;
+    margin: 1rem 0;
+}
+
+.loading-overlay {
+    background: rgba(255, 255, 255, 0.9);
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+
+/* Ocultar elementos Vue hasta que estén listos */
+[v-cloak] {
+    display: none !important;
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div id="profileApp" class="container-fluid">
-    <!-- ✅ IMPORTANTE: Usar solo variables básicas de data(), NO computed properties -->
+<!-- ✅ CONTENEDOR PRINCIPAL CON ID ESPECÍFICO -->
+<div id="profileApp" class="container-fluid" v-cloak>
+    
+    <!-- ✅ ESTADO DE ERROR CRÍTICO -->
+    <div id="critical-error" class="alert alert-danger" style="display: none;">
+        <h5><i class="bi bi-exclamation-triangle"></i> Error de Aplicación</h5>
+        <p>No se pudo cargar la aplicación de perfil. Por favor, recarga la página.</p>
+        <button class="btn btn-outline-danger" onclick="location.reload()">
+            <i class="bi bi-arrow-clockwise"></i> Recargar Página
+        </button>
+    </div>
     
     <!-- Profile Header -->
-    <div class="profile-header text-center" v-show="profileLoaded && profile.username">
+    <div class="profile-header text-center" v-show="profileLoaded && profile.username && !profileError">
         <div class="profile-avatar mx-auto">
-            <i class="fas fa-user"></i>
+            <i class="bi bi-person"></i>
         </div>
         <h2 class="mb-2">[[ profile.username ]]</h2>
         <p class="mb-0">
-            <i class="fas fa-envelope me-2"></i>[[ profile.email ]]
+            <i class="bi bi-envelope me-2"></i>[[ profile.email ]]
         </p>
         <small class="opacity-75" v-if="profile.created_at">
             Miembro desde: [[ formatDate(profile.created_at) ]]
         </small>
     </div>
     
-    <!-- Loading State -->
-    <div v-show="!profileLoaded" class="profile-header text-center">
+    <!-- Estado de carga inicial -->
+    <div v-show="!profileLoaded && !profileError" class="profile-header text-center">
         <div class="profile-avatar mx-auto">
-            <i class="fas fa-spinner fa-spin"></i>
+            <div class="spinner-border text-light" role="status"></div>
         </div>
         <h2 class="mb-2">Cargando perfil...</h2>
+        <p class="mb-0">Por favor espera mientras cargamos tu información</p>
+    </div>
+    
+    <!-- Estado de error de perfil -->
+    <div v-show="profileError" class="error-state text-center">
+        <i class="bi bi-exclamation-triangle display-4 mb-3"></i>
+        <h4>Error cargando perfil</h4>
+        <p>[[ profileError ]]</p>
+        <button @click="loadProfileData()" class="btn btn-primary">
+            <i class="bi bi-arrow-clockwise me-2"></i>Reintentar
+        </button>
     </div>
 
-    <div class="row">
+    <!-- Contenido principal (solo mostrar cuando el perfil esté cargado) -->
+    <div class="row" v-show="profileLoaded && !profileError">
         <!-- Profile Information -->
         <div class="col-lg-8">
-            <!-- ✅ Formulario de perfil - Solo mostrar cuando esté cargado -->
-            <div class="profile-card mb-4" v-show="profileLoaded && profile.username">
+            <!-- Formulario de perfil -->
+            <div class="profile-card mb-4">
                 <div class="card-header bg-primary text-white">
                     <h5 class="mb-0">
-                        <i class="fas fa-user-edit me-2"></i>Información del Perfil
+                        <i class="bi bi-person-gear me-2"></i>Información del Perfil
                     </h5>
                 </div>
-                <div class="card-body p-4">
+                <div class="card-body p-4 position-relative">
+                    <!-- Overlay de carga -->
+                    <div v-show="updating" class="loading-overlay">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary mb-2" role="status"></div>
+                            <p class="mb-0">Actualizando perfil...</p>
+                        </div>
+                    </div>
+                    
                     <form @submit.prevent="updateProfile">
                         <div class="row">
                             <div class="col-md-6">
@@ -124,7 +181,7 @@
                                         :disabled="updating"
                                     >
                                     <label for="username">
-                                        <i class="fas fa-user me-2"></i>Username
+                                        <i class="bi bi-person me-2"></i>Username
                                     </label>
                                 </div>
                             </div>
@@ -140,7 +197,7 @@
                                         :disabled="updating"
                                     >
                                     <label for="email">
-                                        <i class="fas fa-envelope me-2"></i>Email
+                                        <i class="bi bi-envelope me-2"></i>Email
                                     </label>
                                 </div>
                             </div>
@@ -149,14 +206,14 @@
                         <div class="d-grid gap-2 d-md-flex justify-content-md-end">
                             <button 
                                 type="submit" 
-                                class="btn btn-update btn-primary px-4"
+                                class="btn btn-update px-4"
                                 :disabled="updating"
                             >
                                 <span v-if="updating">
-                                    <i class="fas fa-spinner fa-spin me-2"></i>Actualizando...
+                                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>Actualizando...
                                 </span>
                                 <span v-else>
-                                    <i class="fas fa-save me-2"></i>Actualizar Perfil
+                                    <i class="bi bi-check-circle me-2"></i>Actualizar Perfil
                                 </span>
                             </button>
                         </div>
@@ -164,35 +221,35 @@
                 </div>
             </div>
 
-            <!-- Loading State para perfil -->
-            <div v-show="!profileLoaded" class="profile-card mb-4">
-                <div class="card-body text-center py-5">
-                    <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
-                    <p>Cargando información del perfil...</p>
-                </div>
-            </div>
-
-            <!-- Change Password - Siempre visible -->
+            <!-- Change Password Card -->
             <div class="profile-card">
                 <div class="card-header bg-warning text-dark">
                     <h5 class="mb-0">
-                        <i class="fas fa-lock me-2"></i>Cambiar Contraseña
+                        <i class="bi bi-shield-lock me-2"></i>Cambiar Contraseña
                     </h5>
                 </div>
-                <div class="card-body p-4">
+                <div class="card-body p-4 position-relative">
+                    <!-- Overlay de carga -->
+                    <div v-show="changingPassword" class="loading-overlay">
+                        <div class="text-center">
+                            <div class="spinner-border text-warning mb-2" role="status"></div>
+                            <p class="mb-0">Cambiando contraseña...</p>
+                        </div>
+                    </div>
+                    
                     <form @submit.prevent="changePassword">
                         <div class="form-floating mb-3">
                             <input 
                                 type="password" 
                                 class="form-control" 
-                                id="currentPassword" 
+                                id="current_password" 
                                 v-model="passwordData.current_password"
                                 placeholder="Contraseña actual"
                                 required
                                 :disabled="changingPassword"
                             >
-                            <label for="currentPassword">
-                                <i class="fas fa-key me-2"></i>Contraseña Actual
+                            <label for="current_password">
+                                <i class="bi bi-lock me-2"></i>Contraseña Actual
                             </label>
                         </div>
                         
@@ -200,38 +257,37 @@
                             <input 
                                 type="password" 
                                 class="form-control" 
-                                id="newPassword" 
+                                id="new_password" 
                                 v-model="passwordData.new_password"
+                                @input="checkPasswordStrength"
                                 placeholder="Nueva contraseña"
                                 required
                                 :disabled="changingPassword"
-                                @input="checkPasswordStrength"
                             >
-                            <label for="newPassword">
-                                <i class="fas fa-lock me-2"></i>Nueva Contraseña
+                            <label for="new_password">
+                                <i class="bi bi-key me-2"></i>Nueva Contraseña
                             </label>
-                            <div 
-                                class="password-strength" 
-                                :class="passwordStrengthClass"
-                                v-show="passwordData.new_password"
-                            ></div>
-                            <small class="text-muted" v-show="passwordData.new_password">
-                                Fortaleza: [[ passwordStrengthText ]]
-                            </small>
+                            <div v-show="passwordData.new_password" class="mt-2">
+                                <div class="password-strength" :class="passwordStrengthClass"></div>
+                                <div class="d-flex justify-content-between align-items-center mt-1">
+                                    <small class="text-muted">Fortaleza: [[ passwordStrengthText ]]</small>
+                                    <small class="text-muted">[[ passwordStrength ]]%</small>
+                                </div>
+                            </div>
                         </div>
                         
                         <div class="form-floating mb-3">
                             <input 
                                 type="password" 
                                 class="form-control" 
-                                id="confirmPassword" 
+                                id="confirm_password" 
                                 v-model="passwordData.confirm_password"
                                 placeholder="Confirmar contraseña"
                                 required
                                 :disabled="changingPassword"
                             >
-                            <label for="confirmPassword">
-                                <i class="fas fa-check me-2"></i>Confirmar Contraseña
+                            <label for="confirm_password">
+                                <i class="bi bi-check2 me-2"></i>Confirmar Contraseña
                             </label>
                         </div>
                         
@@ -239,19 +295,19 @@
                             <button 
                                 type="submit" 
                                 class="btn btn-warning px-4"
-                                :disabled="changingPassword || !passwordsMatch"
+                                :disabled="changingPassword || !passwordsMatch || !passwordData.current_password || !passwordData.new_password"
                             >
                                 <span v-if="changingPassword">
-                                    <i class="fas fa-spinner fa-spin me-2"></i>Cambiando...
+                                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>Cambiando...
                                 </span>
                                 <span v-else>
-                                    <i class="fas fa-shield-alt me-2"></i>Cambiar Contraseña
+                                    <i class="bi bi-shield-check me-2"></i>Cambiar Contraseña
                                 </span>
                             </button>
                         </div>
                         
-                        <div v-show="!passwordsMatch && passwordData.confirm_password" class="alert alert-danger mt-2">
-                            <i class="fas fa-exclamation-triangle me-2"></i>Las contraseñas no coinciden
+                        <div v-show="!passwordsMatch && passwordData.confirm_password" class="alert alert-danger mt-3">
+                            <i class="bi bi-exclamation-triangle me-2"></i>Las contraseñas no coinciden
                         </div>
                     </form>
                 </div>
@@ -263,30 +319,41 @@
             <div class="profile-card">
                 <div class="card-header bg-info text-white">
                     <h5 class="mb-0">
-                        <i class="fas fa-history me-2"></i>Actividad Reciente
+                        <i class="bi bi-clock-history me-2"></i>Actividad Reciente
                     </h5>
                 </div>
                 <div class="card-body">
-                    <!-- ✅ Simplificar condiciones -->
-                    <div v-show="activityLoaded && activity.recent_actions.length === 0" class="text-center text-muted py-4">
-                        <i class="fas fa-clock fa-2x mb-2"></i>
-                        <p>No hay actividad reciente</p>
+                    <!-- Estado de carga de actividad -->
+                    <div v-show="!activityLoaded && !activityError" class="text-center text-muted py-4">
+                        <div class="spinner-border mb-2" role="status"></div>
+                        <p class="mb-0">Cargando actividad...</p>
                     </div>
                     
-                    <div v-show="activityLoaded && activity.recent_actions.length > 0">
+                    <!-- Error de actividad -->
+                    <div v-show="activityError" class="text-center text-danger py-4">
+                        <i class="bi bi-exclamation-triangle display-6 mb-2"></i>
+                        <p>Error cargando actividad</p>
+                        <button @click="loadActivity()" class="btn btn-sm btn-outline-danger">
+                            <i class="bi bi-arrow-clockwise"></i> Reintentar
+                        </button>
+                    </div>
+                    
+                    <!-- Sin actividad -->
+                    <div v-show="activityLoaded && !activityError && activity.recent_actions.length === 0" class="text-center text-muted py-4">
+                        <i class="bi bi-clock display-6 mb-2"></i>
+                        <p class="mb-0">No hay actividad reciente</p>
+                    </div>
+                    
+                    <!-- Lista de actividad -->
+                    <div v-show="activityLoaded && !activityError && activity.recent_actions.length > 0">
                         <div v-for="action in activity.recent_actions" :key="action.timestamp" class="activity-item">
                             <strong>[[ action.action ]]</strong>
                             <p class="mb-1 text-muted">[[ action.details ]]</p>
                             <small class="text-secondary">
-                                <i class="fas fa-clock me-1"></i>
+                                <i class="bi bi-clock me-1"></i>
                                 [[ formatDate(action.timestamp) ]]
                             </small>
                         </div>
-                    </div>
-                    
-                    <div v-show="!activityLoaded" class="text-center text-muted py-4">
-                        <i class="fas fa-spinner fa-spin fa-2x mb-2"></i>
-                        <p>Cargando actividad...</p>
                     </div>
                 </div>
             </div>
@@ -295,11 +362,11 @@
             <div class="profile-card mt-3">
                 <div class="card-header bg-secondary text-white">
                     <h5 class="mb-0">
-                        <i class="fas fa-desktop me-2"></i>Información de Sesión
+                        <i class="bi bi-display me-2"></i>Información de Sesión
                     </h5>
                 </div>
                 <div class="card-body">
-                    <div v-show="activityLoaded && activity.session_info">
+                    <div v-show="activityLoaded && !activityError && activity.session_info">
                         <div class="mb-2">
                             <strong>IP Address:</strong>
                             <span class="text-muted">[[ activity.session_info.ip_address || 'N/A' ]]</span>
@@ -313,17 +380,40 @@
                             <small class="text-muted d-block">[[ getUserAgent(activity.session_info.user_agent) ]]</small>
                         </div>
                     </div>
-                    <div v-show="!activityLoaded" class="text-center text-muted py-4">
-                        <i class="fas fa-spinner fa-spin"></i>
-                        <p>Cargando información de sesión...</p>
+                    <div v-show="!activityLoaded && !activityError" class="text-center text-muted py-4">
+                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                        <span>Cargando información de sesión...</span>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+<!-- ✅ SCRIPT DE FALLBACK PARA DETECCIÓN DE ERRORES -->
+<script>
+// Detectar si Vue no se carga en 10 segundos y mostrar error
+setTimeout(function() {
+    if (!window.profileApp) {
+        var profileApp = document.getElementById('profileApp');
+        var criticalError = document.getElementById('critical-error');
+        if (profileApp && criticalError) {
+            profileApp.style.display = 'none';
+            criticalError.style.display = 'block';
+        }
+    }
+}, 10000);
+</script>
 {% endblock %}
 
-{% block extra_js %}
+<!-- ✅ CRÍTICO: Usar vue_script en lugar de extra_js para controlar el orden -->
+{% block vue_script %}
+<script>
+    // ✅ IMPORTANTE: Prevenir instancia Vue por defecto de base.html
+    window.DISABLE_DEFAULT_VUE = true;
+    
+    console.log('Profile template cargado, esperando profile.js...');
+</script>
+<!-- ✅ Cargar profile.js después de que base.js esté listo -->
 <script src="{{ url_for('static', filename='js/profile.js') }}"></script>
 {% endblock %}

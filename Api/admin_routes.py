@@ -4395,142 +4395,75 @@ def profile():
         current_app.logger.error(f'Error mostrando perfil: {e}')
         flash('Error cargando perfil', 'error')
         return redirect(url_for('admin.dashboard'))
-
-@admin_bp.route('/api/profile/data')
+        
+@admin_bp.route('/api/profile/data', methods=['GET'])
 @login_required
 def get_profile_data():
-    """API para obtener datos del perfil actual"""
+    """API para obtener datos del perfil"""
     try:
-        profile_data = {
-            'id': current_user.id,
-            'username': current_user.username,
-            'email': current_user.email,
-            'is_admin': getattr(current_user, 'is_admin', True),
-            'created_at': getattr(current_user, 'created_at', datetime.utcnow()).strftime('%Y-%m-%d %H:%M:%S'),
-            'last_login': getattr(current_user, 'last_login', None)
-        }
-        
-        if profile_data['last_login']:
-            profile_data['last_login'] = current_user.last_login.strftime('%Y-%m-%d %H:%M:%S')
-        
         return jsonify({
             'success': True,
-            'profile': profile_data
+            'profile': {
+                'id': current_user.id,
+                'username': current_user.username,
+                'email': current_user.email,
+                'is_admin': current_user.is_admin,
+                'created_at': current_user.created_at.isoformat() if current_user.created_at else None,
+                'last_login': current_user.last_login.isoformat() if current_user.last_login else None
+            }
         })
-        
     except Exception as e:
-        current_app.logger.error(f'Error obteniendo datos del perfil: {e}')
+        current_app.logger.error(f"Error getting profile data: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@admin_bp.route('/api/profile/activity', methods=['GET'])
+@login_required
+def get_profile_activity():
+    """API para obtener actividad del usuario"""
+    try:
+        # Implementar lógica de actividad según tu modelo de datos
         return jsonify({
-            'success': False,
-            'error': 'Error obteniendo datos del perfil'
-        }), 500
+            'success': True,
+            'activity': {
+                'recent_actions': [
+                    # Ejemplo: consultar tabla de logs/actividad
+                    # {'action': 'Login', 'details': 'Acceso al sistema', 'timestamp': '...'}
+                ],
+                'session_info': {
+                    'ip_address': request.remote_addr,
+                    'current_session_start': datetime.now().isoformat(),
+                    'user_agent': request.user_agent.string
+                }
+            }
+        })
+    except Exception as e:
+        current_app.logger.error(f"Error getting profile activity: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @admin_bp.route('/api/profile/update', methods=['POST'])
 @login_required
 def update_profile():
-    """API para actualizar datos básicos del perfil"""
+    """API para actualizar perfil"""
     try:
         data = request.get_json()
         
-        if not data:
-            return jsonify({
-                'success': False,
-                'error': 'No se recibieron datos'
-            }), 400
+        # Validar datos
+        if not data.get('username') or not data.get('email'):
+            return jsonify({'success': False, 'error': 'Username y email son requeridos'}), 400
         
-        # Validar campos requeridos
-        username = data.get('username', '').strip()
-        email = data.get('email', '').strip()
-        
-        if not username or not email:
-            return jsonify({
-                'success': False,
-                'error': 'Username y email son requeridos'
-            }), 400
-        
-        # Validar formato de email
-        import re
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, email):
-            return jsonify({
-                'success': False,
-                'error': 'Formato de email inválido'
-            }), 400
-        
-        # Validar username
-        if len(username) < 3 or len(username) > 80:
-            return jsonify({
-                'success': False,
-                'error': 'Username debe tener entre 3 y 80 caracteres'
-            }), 400
-        
-        # Verificar si username ya existe (excepto el actual)
-        existing_user = User.query.filter(
-            User.username == username,
-            User.id != current_user.id
-        ).first()
-        
-        if existing_user:
-            return jsonify({
-                'success': False,
-                'error': 'Username ya está en uso'
-            }), 400
-        
-        # Verificar si email ya existe (excepto el actual)
-        existing_email = User.query.filter(
-            User.email == email,
-            User.id != current_user.id
-        ).first()
-        
-        if existing_email:
-            return jsonify({
-                'success': False,
-                'error': 'Email ya está en uso'
-            }), 400
-        
-        # Actualizar datos
-        current_user.username = username
-        current_user.email = email
-        
-        # Actualizar timestamp si el campo existe
-        if hasattr(current_user, 'updated_at'):
-            current_user.updated_at = datetime.utcnow()
-        
+        # Actualizar usuario
+        current_user.username = data['username']
+        current_user.email = data['email']
         db.session.commit()
-        
-        current_app.logger.info(f'Perfil actualizado por usuario {current_user.id}')
-        
-        # Notificar via SocketIO si está disponible
-        try:
-            from socketio_utils import notify_admin
-            notify_admin(
-                f'Perfil actualizado exitosamente',
-                'success',
-                {
-                    'action': 'profile_updated',
-                    'username': username,
-                    'email': email
-                }
-            )
-        except ImportError:
-            pass
         
         return jsonify({
             'success': True,
-            'message': 'Perfil actualizado exitosamente',
-            'profile': {
-                'username': current_user.username,
-                'email': current_user.email
-            }
+            'message': 'Perfil actualizado correctamente'
         })
-        
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f'Error actualizando perfil: {e}')
-        return jsonify({
-            'success': False,
-            'error': 'Error interno del servidor'
-        }), 500
+        current_app.logger.error(f"Error updating profile: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @admin_bp.route('/api/profile/change-password', methods=['POST'])
 @login_required
@@ -4539,121 +4472,19 @@ def change_password():
     try:
         data = request.get_json()
         
-        if not data:
-            return jsonify({
-                'success': False,
-                'error': 'No se recibieron datos'
-            }), 400
-        
-        current_password = data.get('current_password', '')
-        new_password = data.get('new_password', '')
-        confirm_password = data.get('confirm_password', '')
-        
-        # Validar campos requeridos
-        if not current_password or not new_password or not confirm_password:
-            return jsonify({
-                'success': False,
-                'error': 'Todos los campos son requeridos'
-            }), 400
-        
-        # Verificar contraseña actual
-        from werkzeug.security import check_password_hash
-        if not check_password_hash(current_user.password_hash, current_password):
-            return jsonify({
-                'success': False,
-                'error': 'Contraseña actual incorrecta'
-            }), 400
-        
-        # Validar nueva contraseña
-        if len(new_password) < 6:
-            return jsonify({
-                'success': False,
-                'error': 'Nueva contraseña debe tener al menos 6 caracteres'
-            }), 400
-        
-        if new_password != confirm_password:
-            return jsonify({
-                'success': False,
-                'error': 'Las contraseñas no coinciden'
-            }), 400
-        
-        # Verificar que no sea la misma contraseña
-        if check_password_hash(current_user.password_hash, new_password):
-            return jsonify({
-                'success': False,
-                'error': 'La nueva contraseña debe ser diferente a la actual'
-            }), 400
+        # Validar contraseña actual
+        if not current_user.check_password(data.get('current_password', '')):
+            return jsonify({'success': False, 'error': 'Contraseña actual incorrecta'}), 400
         
         # Actualizar contraseña
-        from werkzeug.security import generate_password_hash
-        current_user.password_hash = generate_password_hash(new_password)
-        
-        # Actualizar timestamp si el campo existe
-        if hasattr(current_user, 'updated_at'):
-            current_user.updated_at = datetime.utcnow()
-        
+        current_user.set_password(data['new_password'])
         db.session.commit()
         
-        current_app.logger.info(f'Contraseña cambiada por usuario {current_user.id}')
-        
-        # Notificar via SocketIO si está disponible
-        try:
-            from socketio_utils import notify_admin
-            notify_admin(
-                f'Contraseña actualizada exitosamente',
-                'success',
-                {
-                    'action': 'password_changed',
-                    'username': current_user.username
-                }
-            )
-        except ImportError:
-            pass
-        
         return jsonify({
             'success': True,
-            'message': 'Contraseña actualizada exitosamente'
+            'message': 'Contraseña cambiada correctamente'
         })
-        
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f'Error cambiando contraseña: {e}')
-        return jsonify({
-            'success': False,
-            'error': 'Error interno del servidor'
-        }), 500
-
-@admin_bp.route('/api/profile/activity')
-@login_required
-def get_profile_activity():
-    """API para obtener actividad reciente del usuario"""
-    try:
-        # Aquí puedes agregar lógica para obtener actividad del usuario
-        # Por ejemplo, últimos logins, acciones realizadas, etc.
-        
-        activity_data = {
-            'recent_actions': [
-                {
-                    'action': 'Login',
-                    'timestamp': datetime.utcnow().isoformat(),
-                    'details': 'Inicio de sesión exitoso'
-                }
-            ],
-            'session_info': {
-                'current_session_start': datetime.utcnow().isoformat(),
-                'ip_address': request.remote_addr,
-                'user_agent': request.headers.get('User-Agent', 'Unknown')
-            }
-        }
-        
-        return jsonify({
-            'success': True,
-            'activity': activity_data
-        })
-        
-    except Exception as e:
-        current_app.logger.error(f'Error obteniendo actividad del perfil: {e}')
-        return jsonify({
-            'success': False,
-            'error': 'Error obteniendo actividad'
-        }), 500
+        current_app.logger.error(f"Error changing password: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500        

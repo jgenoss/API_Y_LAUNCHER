@@ -1,3 +1,5 @@
+import threading
+import time
 from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, send_from_directory, current_app
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_socketio import SocketIO, emit
@@ -73,15 +75,37 @@ socketio = SocketIO(
     cors_allowed_origins="*", 
     logger=False,
     engineio_logger=False,
-    async_mode='threading',
-    ping_timeout=60,
-    ping_interval=25,
-    max_http_buffer_size=1000000,
-    transports=['polling', 'websocket'],
-    always_connect=True,
-    binary=False
+    # ✅ NUEVAS CONFIGURACIONES CRÍTICAS
+    ping_timeout=60,           # Timeout para ping/pong
+    ping_interval=25,          # Intervalo de ping
+    max_http_buffer_size=1000000,  # 100MB buffer
+    allow_upgrades=True,
+    transports=['websocket', 'polling'],
+    # ✅ CONFIGURACIONES DE CLEANUP
+    client_manager_factory=None,  # Usar manager por defecto pero optimizado
+    namespace_cleanup_interval=30,  # Limpiar namespaces cada 30s
 )
 print("✅ SocketIO configurado para producción")
+
+def cleanup_socketio_sessions():
+    """Limpiar sesiones SocketIO huérfanas cada 5 minutos"""
+    while True:
+        try:
+            time.sleep(300)  # 5 minutos
+            if socketio and hasattr(socketio, 'server'):
+                # Limpiar rooms vacíos
+                manager = socketio.server.manager
+                if hasattr(manager, 'rooms'):
+                    for namespace in list(manager.rooms.keys()):
+                        rooms = manager.rooms[namespace]
+                        empty_rooms = [room for room, members in rooms.items() if not members]
+                        for room in empty_rooms:
+                            del rooms[room]
+                    print(f"🧹 Cleanup SocketIO: {len(empty_rooms)} rooms vacíos eliminados")
+        except Exception as e:
+            print(f"❌ Error en cleanup SocketIO: {e}")
+            
+       
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -775,7 +799,8 @@ if __name__ == '__main__':
             
             # Registrar blueprints
             blueprints_registered = register_blueprints()
-            
+            cleanup_thread = threading.Thread(target=cleanup_socketio_sessions, daemon=True)
+            cleanup_thread.start()     
             # Información de inicio
             port = 5000
             print(f"🚀 Iniciando Launcher Server en puerto {port} [V{CODIGO_VERSION}]")

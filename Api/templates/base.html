@@ -59,6 +59,11 @@
                                 </a>
                             </li>
                             <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('admin.profile') }}">
+                                    <i class="fas fa-user-circle me-2"></i>Mi Perfil
+                                </a>
+                            </li>
+                            <li class="nav-item">
                                 <a class="nav-link {{ 'active' if 'versions' in request.endpoint }}"
                                     href="{{ url_for('admin.versions') }}">
                                     <i class="bi bi-tags"></i> Versiones del Juego

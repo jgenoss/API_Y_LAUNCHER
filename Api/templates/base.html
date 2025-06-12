@@ -209,29 +209,32 @@
     {% block vue_script %}
     <script>
         // Instancia Vue por defecto para páginas básicas
-        const app = createVueInstance({
-            data() {
-                return {
-                    loadingMessage: 'Cargando...'
-                };
-            },
-
-            methods: {
-                testSocketConnection() {
-                    if (this.isSocketConnected) {
-                        this.emitSocket('ping');
-                        this.showInfo('Test SocketIO', 'Ping enviado al servidor');
-                    } else {
-                        this.showWarning('Sin conexión', 'SocketIO no está conectado');
-                    }
+        if (!window.DISABLE_DEFAULT_VUE) {
+            const app = createVueInstance({
+                data() {
+                    return {
+                        loadingMessage: 'Cargando...'
+                    };
                 },
 
-                setLoading(isLoading, message = 'Cargando...') {
-                    this.loading = isLoading;
-                    this.loadingMessage = message;
+                methods: {
+                    testSocketConnection() {
+                        if (this.isSocketConnected) {
+                            this.emitSocket('ping');
+                            this.showInfo('Test SocketIO', 'Ping enviado al servidor');
+                        } else {
+                            this.showWarning('Sin conexión', 'SocketIO no está conectado');
+                        }
+                    },
+
+                    setLoading(isLoading, message = 'Cargando...') {
+                        this.loading = isLoading;
+                        this.loadingMessage = message;
+                    }
                 }
-            }
-        });
+            });
+        }
+
     </script>
     {% endblock %}
 

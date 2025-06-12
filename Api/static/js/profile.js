@@ -48,7 +48,7 @@ function initializeProfileApp() {
     try {
         // ✅ CREAR INSTANCIA USANDO EL PATRÓN DEL PROYECTO
         const profileApp = new Vue({
-            el: '#profileApp',
+            el: '#app',
             delimiters: ['[[', ']]'],
             mixins: [NotificationMixin, HttpMixin, UtilsMixin, SocketMixin],
 

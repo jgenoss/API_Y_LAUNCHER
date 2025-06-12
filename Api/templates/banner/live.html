@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Launcher Banner</title>
+
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <!-- Axios -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <!-- Vue.js -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.min.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #000;
+        }
+
+        /* ==================== CONTENEDOR FIJO 1016x540 ==================== */
+        .banner-container {
+            width: 1016px;
+            height: 540px;
+            position: relative;
+            background: linear-gradient(45deg, #323232 0%, #000000 100%);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            margin: 0 auto;
+            overflow: hidden;
+        }
+
+        /* Header con indicador de estado */
+        .banner-header {
+            background: rgba(0, 0, 0, 0.6);
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+            height: 50px;
+            min-height: 50px;
+        }
+
+        .connection-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ff4444;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.connected {
+            background: #44ff44;
+        }
+
+        .status-dot.maintenance {
+            background: #ffaa00;
+        }
+
+        .brand-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        /* ==================== CONTENIDO PRINCIPAL ==================== */
+        .main-content {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 635px 346px;
+            gap: 20px;
+            padding: 10px;
+            height: 470px;
+            min-height: 470px;
+            max-height: 470px;
+        }
+
+        /* Panel izquierdo */
+        .left-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            position: relative;
+            height: 100%;
+        }
+
+        .background-image {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            border-radius: 20px;
+            opacity: 0.3;
+            transition: all 0.8s ease;
+        }
+
+        .background-image.active {
+            opacity: 0.5;
+            transform: scale(1.02);
+        }
+
+        .game-info-card {
+            padding: 15px;
+            position: relative;
+            z-index: 2;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .game-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+            margin-bottom: 15px;
+        }
+
+        .version-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .version-box {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 12px;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .version-label {
+            font-size: 11px;
+            opacity: 0.8;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .version-value {
+            font-size: 14px;
+            font-weight: bold;
+            color: #4ade80;
+        }
+
+        .version-value.loading {
+            color: #fbbf24;
+            animation: pulse 1s infinite;
+        }
+
+        .slide-description {
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: auto;
+            position: relative;
+            z-index: 2;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(10px);
+        }
+
+        .slide-description h4 {
+            font-size: 16px;
+            margin-bottom: 8px;
+            color: #4ade80;
+        }
+
+        .slide-description p {
+            font-size: 13px;
+            line-height: 1.4;
+            opacity: 0.9;
+        }
+
+        /* Panel derecho */
+        .right-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            height: 100%;
+        }
+
+        .connection-status-widget {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(20px);
+            border-radius: 15px;
+            padding: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            text-align: center;
+        }
+
+        .connection-status-label {
+            font-size: 11px;
+            opacity: 0.8;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .connection-status-value {
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .connection-status-value.connected {
+            color: #4ade80;
+        }
+
+        .connection-status-value.maintenance {
+            color: #fbbf24;
+        }
+
+        .connection-status-value.loading {
+            color: #ff6b6b;
+        }
+
+        /* Widget de noticias */
+        .news-widget {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(20px);
+            border-radius: 15px;
+            padding: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .news-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .news-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .news-count {
+            background: #4ade80;
+            color: #000;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+
+        .news-list {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+
+        .news-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            border-left: 3px solid #4ade80;
+            transition: all 0.3s ease;
+            animation: slideInNews 0.5s ease;
+        }
+
+        .news-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateX(3px);
+        }
+
+        .news-type {
+            font-size: 9px;
+            font-weight: bold;
+            color: #4ade80;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .news-message {
+            font-size: 11px;
+            line-height: 1.3;
+            color: #e5e7eb;
+        }
+
+        .news-loading,
+        .news-empty {
+            text-align: center;
+            padding: 20px;
+            color: rgba(255, 255, 255, 0.6);
+            font-style: italic;
+            font-size: 12px;
+        }
+
+        /* Controladores de slides */
+        .slide-controls {
+            position: absolute;
+            bottom: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+        }
+
+        .slide-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.4);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .slide-dot:hover {
+            background: rgba(255, 255, 255, 0.7);
+            transform: scale(1.1);
+        }
+
+        .slide-dot.active {
+            background: #fff;
+            border-color: rgba(255, 255, 255, 0.5);
+            transform: scale(1.05);
+        }
+
+        /* Mantenimiento */
+        .maintenance-mode {
+            background: linear-gradient(45deg, #ff6b35 0%, #f7931e 100%) !important;
+        }
+
+        .maintenance-alert {
+            background: rgba(255, 107, 53, 0.2);
+            border: 1px solid rgba(255, 107, 53, 0.5);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            text-align: center;
+            font-size: 12px;
+            position: relative;
+            z-index: 3;
+        }
+
+        /* Animaciones */
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        @keyframes slideInNews {
+            from {
+                opacity: 0;
+                transform: translateX(15px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        /* Scrollbar personalizado */
+        .news-list::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .news-list::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+        }
+
+        .news-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
+        }
+
+        .news-list::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        /* Debug panel */
+        .debug-info {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 10px;
+            max-width: 250px;
+            z-index: 9999;
+            display: none;
+        }
+
+        .debug-info.show {
+            display: block;
+        }
+
+        /* Protección */
+        .banner-container {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app" v-cloak>
+        <div class="banner-container" :class="{ 'maintenance-mode': systemStatus.maintenance_mode }">
+            <!-- Header -->
+            <div class="banner-header">
+                <div class="connection-indicator">
+                    <div class="status-dot" :class="getStatusClass()"></div>
+                    <span>[[ getConnectionText() ]]</span>
+                </div>
+                <div class="brand-title">
+                    [[ bannerConfig.name ]]
+                </div>
+            </div>
+
+            <!-- Contenido principal -->
+            <div class="main-content">
+                <!-- Panel izquierdo -->
+                <div class="left-panel">
+                    <!-- Imagen de fondo del slide actual -->
+                    <div v-if="currentSlide && currentSlide.image_url" class="background-image active"
+                        :style="{ backgroundImage: `url(${currentSlide.image_url})` }"></div>
+                    <!-- Descripción del slide -->
+                    <div v-if="currentSlide && currentSlide.content" class="slide-description">
+                        <h4>📋 [[ currentSlide.content ]]</h4>
+                        <p>Mantente informado con las últimas actualizaciones, eventos y noticias del juego.</p>
+                    </div>
+
+                    <!-- Alerta de mantenimiento -->
+                    <div v-if="systemStatus.maintenance_mode" class="maintenance-alert">
+                        <strong>🔧 Sistema en Mantenimiento</strong><br>
+                        [[ systemStatus.maintenance_message || 'El sistema está temporalmente fuera de servicio' ]]
+                    </div>
+                </div>
+
+                <!-- Panel derecho -->
+                <div class="right-panel">
+                    <!-- Estado de conexión -->
+                    <div class="connection-status-widget">
+                        <div class="connection-status-label">Estado del Sistema</div>
+                        <div class="connection-status-value" :class="getConnectionStatusClass()">
+                            [[ getConnectionStatusText() ]] <br>
+                            🎮 [[ currentSlide ? currentSlide.title : bannerConfig.name ]]
+                        </div>
+                    </div>
+
+                    <!-- Widget de noticias -->
+                    <div class="news-widget">
+                        <div class="news-header">
+                            <div class="news-title">📰 Noticias</div>
+                            <div v-if="news.length > 0" class="news-count">[[ news.length ]]</div>
+                        </div>
+
+                        <div class="news-list">
+                            <div v-if="newsLoading" class="news-loading">
+                                Cargando noticias...
+                            </div>
+                            <div v-else-if="news.length === 0" class="news-empty">
+                                📭 No hay noticias disponibles
+                            </div>
+                            <div v-else>
+                                <div v-for="(newsItem, index) in news" :key="newsItem.id || index" class="news-item"
+                                    :style="{ animationDelay: `${index * 0.1}s` }">
+                                    <div class="news-type">
+                                        [[ getNewsTypeIcon(newsItem.type) ]] [[ newsItem.type || 'Información' ]]
+                                    </div>
+                                    <div class="news-message">
+                                        [[ newsItem.message || 'Sin mensaje' ]]
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Controladores de slides -->
+            <div v-if="bannerConfig.show_controller && slides.length > 1" class="slide-controls">
+                <div v-for="(slide, index) in slides" :key="'dot-' + index" class="slide-dot"
+                    :class="{ active: currentSlideIndex === index }" @click="goToSlide(index)"></div>
+            </div>
+        </div>
+
+        <!-- Panel de debug -->
+        <div class="debug-info" :class="{ show: showDebug }">
+            <strong>🐛 BANNER DEBUG</strong><br>
+            Socket: [[ isSocketConnected ? '✅' : '❌' ]] ([[ socketId || 'N/A' ]])<br>
+            Mantenimiento: [[ systemStatus.maintenance_mode ? '🔧' : '✅' ]]<br>
+            Noticias: [[ news.length ]]<br>
+            Último evento: [[ lastEvent ]]<br>
+            Conectado desde: [[ connectedSince ]]
+        </div>
+    </div>
+
+    <script>
+        // ==================== CONFIGURACIÓN INICIAL ====================
+
+        // Configurar Vue con delimitadores personalizados
+        Vue.config.delimiters = ['[[', ']]'];
+
+        // Datos iniciales del servidor
+        const INITIAL_DATA = {{ initial_data | tojson }};
+        const BANNER_DATA = {{ banner_data | tojson }};
+
+        console.log('🎨 Banner Integrado Iniciado');
+        console.log('📋 Datos iniciales:', INITIAL_DATA);
+        console.log('🖼️ Config banner:', BANNER_DATA);
+
+        // ==================== APLICACIÓN VUE ====================
+
+        const bannerApp = new Vue({
+            el: '#app',
+            delimiters: ['[[', ']]'],
+
+            data() {
+                return {
+                    // SocketIO
+                    socket: null,
+                    isSocketConnected: false,
+                    socketId: null,
+                    lastEvent: 'Inicializando',
+                    connectedSince: null,
+
+                    // Debug
+                    showDebug: false,
+
+                    // Configuración del banner
+                    bannerConfig: BANNER_DATA.config,
+                    slides: BANNER_DATA.slides,
+                    currentSlideIndex: 0,
+                    slideTimer: null,
+
+                    // Estado del sistema (desde servidor)
+                    systemStatus: {
+                        status: INITIAL_DATA.system_status.status,
+                        latest_game_version: INITIAL_DATA.system_status.latest_game_version,
+                        current_launcher_version: INITIAL_DATA.system_status.current_launcher_version,
+                        maintenance_mode: INITIAL_DATA.system_status.maintenance_mode,
+                        maintenance_message: INITIAL_DATA.system_status.maintenance_message
+                    },
+
+                    // Noticias (desde servidor)
+                    news: INITIAL_DATA.news || [],
+                    newsLoading: false,
+
+                    // Estadísticas
+                    stats: INITIAL_DATA.stats || {}
+                }
+            },
+
+            computed: {
+                currentSlide() {
+                    return this.slides[this.currentSlideIndex] || null;
+                }
+            },
+
+            mounted() {
+                console.log('🚀 Banner Vue montado');
+
+                // Activar debug con doble click
+                document.addEventListener('dblclick', () => {
+                    this.showDebug = !this.showDebug;
+                    console.log(`Debug panel: ${this.showDebug ? 'ACTIVADO' : 'DESACTIVADO'}`);
+                });
+
+                // Inicializar SocketIO
+                if (this.bannerConfig.enable_socketio) {
+                    this.initSocketIO();
+                }
+
+                // Auto-rotación de slides
+                if (this.bannerConfig.auto_rotate && this.slides.length > 1) {
+                    this.startAutoRotation();
+                }
+
+                // Protecciones
+                this.setupProtections();
+
+                console.log('✅ Banner completamente inicializado');
+            },
+
+            methods: {
+                // ==================== SOCKETIO ====================
+
+                initSocketIO() {
+                    console.log('🔌 Inicializando SocketIO integrado...');
+
+                    this.socket = io('/public', {
+                        reconnection: true,
+                        reconnectionAttempts: 5,
+                        reconnectionDelay: 100,
+                        timeout: 100
+                    });
+
+                    this.setupSocketEvents();
+                },
+
+                setupSocketEvents() {
+                    this.socket.on('connect', () => {
+                        this.isSocketConnected = true;
+                        this.socketId = this.socket.id;
+                        this.connectedSince = new Date().toLocaleTimeString();
+                        this.lastEvent = 'connect';
+                        console.log('✅ SocketIO conectado:', this.socket.id);
+
+                        // Solicitar datos iniciales
+                        this.socket.emit('request_initial_data');
+                    });
+
+                    this.socket.on('disconnect', () => {
+                        this.isSocketConnected = false;
+                        this.socketId = null;
+                        this.lastEvent = 'disconnect';
+                        console.log('❌ SocketIO desconectado');
+                    });
+
+                    this.socket.on('initial_data', (data) => {
+                        console.log('📋 Datos iniciales recibidos por SocketIO:', data);
+                        this.lastEvent = 'initial_data';
+                        this.processInitialData(data);
+                    });
+
+                    this.socket.on('news_updated', (data) => {
+                        console.log('📰 Noticias actualizadas:', data);
+                        this.lastEvent = 'news_updated';
+
+                        if (data && Array.isArray(data.news)) {
+                            this.news = data.news;
+                        } else if (Array.isArray(data)) {
+                            this.news = data;
+                        }
+                        this.newsLoading = false;
+                    });
+
+                    this.socket.on('system_status_changed', (data) => {
+                        console.log('⚙️ Estado del sistema cambiado:', data);
+                        this.lastEvent = 'system_status_changed';
+                        this.updateSystemStatus(data);
+                    });
+
+                    this.socket.on('maintenance_mode_changed', (data) => {
+                        console.log('🔧 ¡MANTENIMIENTO ACTUALIZADO!:', data);
+                        this.lastEvent = 'maintenance_mode_changed';
+
+                        // Manejar datos (puede venir como array o objeto)
+                        let maintenanceData = Array.isArray(data) ? data[0] : data;
+
+                        if (maintenanceData) {
+                            const enabled = maintenanceData.enabled !== undefined ? maintenanceData.enabled : maintenanceData.Enabled;
+                            const message = maintenanceData.message || maintenanceData.Message || 'Sistema en mantenimiento';
+
+                            console.log(`🔧 Actualizando mantenimiento: ${enabled}, mensaje: ${message}`);
+                            this.systemStatus.maintenance_mode = enabled;
+                            this.systemStatus.maintenance_message = message;
+                        }
+                    });
+
+                    this.socket.on('stats_update', (data) => {
+                        console.log('📊 Estadísticas actualizadas:', data);
+                        this.lastEvent = 'stats_update';
+                        this.updateStats(data);
+                    });
+                },
+
+                // ==================== PROCESAMIENTO DE DATOS ====================
+
+                processInitialData(data) {
+                    if (data.system_status) {
+                        this.updateSystemStatus(data.system_status);
+                    }
+                    if (data.news && Array.isArray(data.news)) {
+                        this.news = data.news;
+                        this.newsLoading = false;
+                    }
+                    if (data.stats) {
+                        this.updateStats(data.stats);
+                    }
+                },
+
+                updateSystemStatus(data) {
+                    if (data.latest_game_version) {
+                        this.systemStatus.latest_game_version = data.latest_game_version;
+                    }
+                    if (data.current_launcher_version) {
+                        this.systemStatus.current_launcher_version = data.current_launcher_version;
+                    }
+                    if (data.maintenance_mode !== undefined) {
+                        this.systemStatus.maintenance_mode = data.maintenance_mode;
+                        this.systemStatus.maintenance_message = data.maintenance_message;
+                    }
+                    if (data.status) {
+                        this.systemStatus.status = data.status;
+                    }
+                },
+
+                updateStats(data) {
+                    if (data.players !== undefined) {
+                        this.stats.players = data.players;
+                    }
+                    if (data.servers !== undefined) {
+                        this.stats.servers = data.servers;
+                    }
+                    if (data.status !== undefined) {
+                        this.stats.status = data.status;
+                    }
+                },
+
+                // ==================== ESTADO Y APARIENCIA ====================
+
+                getStatusClass() {
+                    if (!this.isSocketConnected) return 'loading';
+                    if (this.systemStatus.maintenance_mode) return 'maintenance';
+                    return 'connected';
+                },
+
+                getConnectionText() {
+                    if (!this.isSocketConnected) return '🔴 Conectando...';
+                    if (this.systemStatus.maintenance_mode) return '🟡 Mantenimiento';
+                    return '🟢 En línea';
+                },
+
+                getConnectionStatusClass() {
+                    if (!this.isSocketConnected) return 'loading';
+                    if (this.systemStatus.maintenance_mode) return 'maintenance';
+                    return 'connected';
+                },
+
+                getConnectionStatusText() {
+                    if (!this.isSocketConnected) return 'Conectando...';
+                    if (this.systemStatus.maintenance_mode) return 'Mantenimiento';
+                    return 'Sistema Online';
+                },
+
+                getNewsTypeIcon(type) {
+                    const icons = {
+                        'Actualización': '🔄',
+                        'Noticia': '📢',
+                        'Evento': '🎉',
+                        'Mantenimiento': '🔧',
+                        'Aviso': '⚠️',
+                        'Error': '❌',
+                        'Test': '🧪',
+                        'Test API': '🧪',
+                        'Sistema': '⚙️',
+                        'Comunidad': '👥'
+                    };
+                    return icons[type] || '📝';
+                },
+
+                // ==================== CONTROL DE SLIDES ====================
+
+                goToSlide(index) {
+                    if (index >= 0 && index < this.slides.length && index !== this.currentSlideIndex) {
+                        this.currentSlideIndex = index;
+                        this.restartAutoRotation();
+                        console.log(`📸 Slide ${index + 1}: ${this.slides[index].title}`);
+                    }
+                },
+
+                nextSlide() {
+                    const nextIndex = (this.currentSlideIndex + 1) % this.slides.length;
+                    this.goToSlide(nextIndex);
+                },
+
+                startAutoRotation() {
+                    if (!this.bannerConfig.auto_rotate || this.slides.length <= 1) return;
+
+                    const interval = this.bannerConfig.rotation_interval || 6000;
+                    this.slideTimer = setTimeout(() => {
+                        this.nextSlide();
+                        this.startAutoRotation();
+                    }, interval);
+
+                    console.log(`🔄 Auto-rotación iniciada (${interval}ms)`);
+                },
+
+                stopAutoRotation() {
+                    if (this.slideTimer) {
+                        clearTimeout(this.slideTimer);
+                        this.slideTimer = null;
+                    }
+                },
+
+                restartAutoRotation() {
+                    this.stopAutoRotation();
+                    this.startAutoRotation();
+                },
+
+                // ==================== PROTECCIONES ====================
+
+                setupProtections() {
+                    // Deshabilitar menú contextual
+                    document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+                    // Deshabilitar selección
+                    document.addEventListener('selectstart', (e) => e.preventDefault());
+
+                    // Controles de teclado
+                    document.addEventListener('keydown', (e) => {
+                        if (e.key === 'ArrowLeft') {
+                            const prevIndex = this.currentSlideIndex - 1 >= 0 ? this.currentSlideIndex - 1 : this.slides.length - 1;
+                            this.goToSlide(prevIndex);
+                        } else if (e.key === 'ArrowRight') {
+                            this.nextSlide();
+                        }
+                    });
+
+                    console.log('🔒 Protecciones activadas');
+                }
+            }
+        });
+
+        // ==================== INICIALIZACIÓN FINAL ====================
+
+        // Logging para debugging
+        window.bannerApp = bannerApp;
+        console.log('✅ Banner integrado completamente cargado');
+        console.log('🐛 Haz doble click para activar el panel de debug');
+        console.log('🎯 App disponible en window.bannerApp para debugging');
+    </script>
+</body>
+
+</html>

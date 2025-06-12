@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Launcher Admin Panel{% endblock %}</title>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SweetAlert2 -->
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11.22.0/dist/sweetalert2.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.22.0/dist/sweetalert2.all.min.js"></script>
+
+    {% block extra_css %}{% endblock %}
+</head>
+
+<body>
+    <div id="app">
+        <!-- Navbar -->
+        <nav class="navbar navbar-dark sticky-top bg-dark flex-md-nowrap p-0 shadow">
+            <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="{{ url_for('admin.dashboard') }}">
+                <i class="bi bi-controller"></i> Launcher Admin
+            </a>
+            <button class="navbar-toggler position-absolute d-md-none collapsed" type="button" data-bs-toggle="collapse"
+                data-bs-target="#sidebarMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="navbar-nav">
+                <div class="nav-item text-nowrap d-flex align-items-center">
+                    <span v-if="isSocketConnected" class="badge bg-success me-2" title="Conectado en tiempo real">
+                        <i class="bi bi-wifi"></i>
+                    </span>
+                    <span v-else class="badge bg-danger me-2" title="Desconectado">
+                        <i class="bi bi-wifi-off"></i>
+                    </span>
+                    <a class="nav-link px-3" href="{{ url_for('logout') }}">
+                        <i class="bi bi-box-arrow-right"></i> Cerrar Sesión
+                    </a>
+                </div>
+            </div>
+        </nav>
+
+        <div class="container-fluid">
+            <div class="row">
+                <!-- Sidebar -->
+                <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block bg-light sidebar collapse">
+                    <div class="position-sticky pt-3">
+                        <ul class="nav flex-column">
+                            <li class="nav-item">
+                                <a class="nav-link {{ 'active' if request.endpoint == 'admin.dashboard' }}"
+                                    href="{{ url_for('admin.dashboard') }}">
+                                    <i class="bi bi-speedometer2"></i> Dashboard
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link {{ 'active' if 'versions' in request.endpoint }}"
+                                    href="{{ url_for('admin.versions') }}">
+                                    <i class="bi bi-tags"></i> Versiones del Juego
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link {{ 'active' if 'files' in request.endpoint }}"
+                                    href="{{ url_for('admin.files') }}">
+                                    <i class="bi bi-file-earmark"></i> Archivos del Juego
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link {{ 'active' if 'updates' in request.endpoint }}"
+                                    href="{{ url_for('admin.updates') }}">
+                                    <i class="bi bi-download"></i> Paquetes de Actualización
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link {{ 'active' if 'launcher' in request.endpoint }}"
+                                    href="{{ url_for('admin.launcher_versions') }}">
+                                    <i class="bi bi-app"></i> Versiones del Launcher
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link {{ 'active' if 'messages' in request.endpoint }}"
+                                    href="{{ url_for('admin.messages') }}">
+                                    <i class="bi bi-chat-dots"></i> Mensajes y Noticias
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link {{ 'active' if 'hwid' in request.endpoint }}"
+                                    href="{{ url_for('admin.hwid_management') }}">
+                                    <i class="bi bi-shield-exclamation"></i> Gestión de HWID
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link {{ 'active' if 'banners' in request.endpoint }}"
+                                    href="{{ url_for('admin.banner_management') }}">
+                                    <i class="bi bi-image"></i> Gestión de Banners
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link {{ 'active' if 'logs' in request.endpoint }}"
+                                    href="{{ url_for('admin.download_logs') }}">
+                                    <i class="bi bi-list-ul"></i> Logs de Descarga
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="{{ url_for('admin.test_socketio_public') }}">
+                                    <i class="fas fa-flask"></i> 🧪 Test SocketIO
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link {{ 'active' if 'settings' in request.endpoint }}"
+                                    href="{{ url_for('admin.settings') }}">
+                                    <i class="bi bi-gear"></i> Configuración
+                                </a>
+                            </li>
+                        </ul>
+
+                        <h6
+                            class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-1 text-muted">
+                            <span>Enlaces Rápidos</span>
+                        </h6>
+                        <ul class="nav flex-column mb-2">
+                            <li class="nav-item">
+                                <a class="nav-link" href="/api/status" target="_blank">
+                                    <i class="bi bi-activity"></i> Estado de la API
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="/api/stats" target="_blank">
+                                    <i class="bi bi-bar-chart"></i> Estadísticas API
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="#" @click.prevent="testSocketConnection">
+                                    <i class="bi bi-router"></i> Test SocketIO
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </nav>
+
+                <!-- Main content -->
+                <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                    <div class="content-area">
+                        <!-- Flash Messages (Solo para mensajes del servidor) -->
+                        {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% if messages %}
+                        {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show server-message"
+                            role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                        {% endfor %}
+                        {% endif %}
+                        {% endwith %}
+
+                        <!-- Loading overlay global -->
+                        <div v-if="loading"
+                            class="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+                            style="background: rgba(0,0,0,0.5); z-index: 9999;">
+                            <div class="bg-white p-4 rounded shadow">
+                                <div class="d-flex align-items-center">
+                                    <div class="spinner-border text-primary me-3" role="status"></div>
+                                    <span>[[ loadingMessage || 'Cargando...' ]]</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Page Content -->
+                        {% block content %}{% endblock %}
+                    </div>
+                </main>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <!-- jQuery -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"
+        integrity="sha512-v2CJ7UaYy4JwqLDIrZUI/4hqeoQieOmAZNXBeQyjo21dadnwR+8ZaIJVT8EE2iyI61OV8e6M8PP2/4hpQINQ/g=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+    <!-- Axios -->
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+    <!-- Vue.js -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.min.js"></script>
+
+    <!-- Base.js - Archivo principal -->
+    <script src="{{ url_for('static', filename='js/base.js') }}"></script>
+
+    <!-- JavaScript específico de la página -->
+    {% block vue_script %}
+    <script>
+        // Instancia Vue por defecto para páginas básicas
+        const app = createVueInstance({
+            data() {
+                return {
+                    loadingMessage: 'Cargando...'
+                };
+            },
+
+            methods: {
+                testSocketConnection() {
+                    if (this.isSocketConnected) {
+                        this.emitSocket('ping');
+                        this.showInfo('Test SocketIO', 'Ping enviado al servidor');
+                    } else {
+                        this.showWarning('Sin conexión', 'SocketIO no está conectado');
+                    }
+                },
+
+                setLoading(isLoading, message = 'Cargando...') {
+                    this.loading = isLoading;
+                    this.loadingMessage = message;
+                }
+            }
+        });
+    </script>
+    {% endblock %}
+
+    <!-- JavaScript adicional específico de cada página -->
+    {% block extra_js %}{% endblock %}
+
+    <!-- CSS adicional para Vue -->
+    <style>
+        [v-cloak] {
+            display: none !important;
+        }
+
+        .fade-enter-active,
+        .fade-leave-active {
+            transition: opacity 0.3s;
+        }
+
+        .fade-enter,
+        .fade-leave-to {
+            opacity: 0;
+        }
+
+        .slide-enter-active,
+        .slide-leave-active {
+            transition: transform 0.3s;
+        }
+
+        .slide-enter,
+        .slide-leave-to {
+            transform: translateX(100%);
+        }
+
+        /* Estilos para estados de carga */
+        .loading-overlay {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(2px);
+        }
+
+        /* Indicador de conexión */
+        .connection-indicator {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+    </style>
+</body>
+
+</html>

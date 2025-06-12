@@ -1,0 +1,822 @@
+{% extends "base.html" %}
+
+{% block title %}Gestión de Banners - Launcher Admin Panel{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <i class="bi bi-image me-2"></i>Gestión de Banners
+    </h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" @click="refreshData">
+                <i class="bi bi-arrow-clockwise"></i> Actualizar
+            </button>
+            <button type="button" class="btn btn-sm btn-info" @click="testBanner">
+                <i class="bi bi-play-circle"></i> Probar Banner
+            </button>
+        </div>
+        <div class="btn-group">
+            <button type="button" class="btn btn-sm btn-primary" @click="showCreateBannerModal">
+                <i class="bi bi-plus-circle"></i> Nuevo Banner
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Estadísticas rápidas -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <div class="small fw-bold text-white-50 text-uppercase">Total Banners</div>
+                        <div class="h3 mb-0">[[ stats.totalBanners ]]</div>
+                    </div>
+                    <div class="ms-3">
+                        <i class="bi bi-image" style="font-size: 2rem; opacity: 0.7;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <div class="small fw-bold text-white-50 text-uppercase">Banners Activos</div>
+                        <div class="h3 mb-0">[[ stats.activeBanners ]]</div>
+                    </div>
+                    <div class="ms-3">
+                        <i class="bi bi-check-circle" style="font-size: 2rem; opacity: 0.7;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <div class="small fw-bold text-white-50 text-uppercase">Total Slides</div>
+                        <div class="h3 mb-0">[[ stats.totalSlides ]]</div>
+                    </div>
+                    <div class="ms-3">
+                        <i class="bi bi-collection" style="font-size: 2rem; opacity: 0.7;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <div class="small fw-bold text-white-50 text-uppercase">En Uso</div>
+                        <div class="h3 mb-0">[[ activeBannerName ]]</div>
+                    </div>
+                    <div class="ms-3">
+                        <i class="bi bi-star" style="font-size: 2rem; opacity: 0.7;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lista de banners -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="card-title mb-0">
+            <i class="bi bi-list me-2"></i>Lista de Banners
+        </h5>
+    </div>
+    <div class="card-body">
+        <div v-if="loading" class="text-center py-4">
+            <div class="spinner-border text-primary" role="status"></div>
+            <div class="mt-2">Cargando banners...</div>
+        </div>
+        
+        <div v-else-if="banners.length === 0" class="text-center py-4 text-muted">
+            <i class="bi bi-image" style="font-size: 3rem; opacity: 0.3;"></i>
+            <div class="mt-2">No hay banners configurados</div>
+            <button class="btn btn-primary mt-3" @click="showCreateBannerModal">
+                <i class="bi bi-plus-circle me-2"></i>Crear Primer Banner
+            </button>
+        </div>
+        
+        <div v-else class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Estado</th>
+                        <th>Nombre</th>
+                        <th>Descripción</th>
+                        <th>Slides</th>
+                        <th>Configuración</th>
+                        <th>Creado</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="banner in banners" :key="banner.id">
+                        <td>
+                            <span v-if="banner.is_active" class="badge bg-success">
+                                <i class="bi bi-check-circle me-1"></i>Activo
+                            </span>
+                            <span v-else class="badge bg-secondary">Inactivo</span>
+                        </td>
+                        <td>
+                            <strong>[[ banner.name ]]</strong>
+                            <span v-if="banner.is_default" class="badge bg-info ms-2">Por Defecto</span>
+                        </td>
+                        <td>
+                            <small class="text-muted">[[ banner.description || 'Sin descripción' ]]</small>
+                        </td>
+                        <td>
+                            <span class="badge bg-primary">[[ banner.slides_count ]] slides</span>
+                        </td>
+                        <td>
+                            <div class="small">
+                                <div v-if="banner.auto_rotate">
+                                    <i class="bi bi-arrow-repeat text-success me-1"></i>Auto-rotación
+                                </div>
+                                <div v-if="banner.responsive">
+                                    <i class="bi bi-phone text-info me-1"></i>Responsive
+                                </div>
+                                <div v-if="banner.enable_socketio">
+                                    <i class="bi bi-wifi text-warning me-1"></i>Tiempo Real
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <small class="text-muted">[[ formatDate(banner.created_at) ]]</small>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button 
+                                    v-if="!banner.is_active"
+                                    class="btn btn-outline-success"
+                                    @click="setActiveBanner(banner.id)"
+                                    title="Establecer como activo"
+                                >
+                                    <i class="bi bi-check-circle"></i>
+                                </button>
+                                <button 
+                                    class="btn btn-outline-primary"
+                                    @click="editBanner(banner)"
+                                    title="Editar banner"
+                                >
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button 
+                                    class="btn btn-outline-info"
+                                    @click="manageBannerSlides(banner)"
+                                    title="Gestionar slides"
+                                >
+                                    <i class="bi bi-collection"></i>
+                                </button>
+                                <button 
+                                    v-if="!banner.is_active"
+                                    class="btn btn-outline-danger"
+                                    @click="deleteBanner(banner.id, banner.name)"
+                                    title="Eliminar banner"
+                                >
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para crear/editar banner -->
+<div class="modal fade" id="bannerModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-image me-2"></i>
+                    [[ isEditMode ? 'Editar Banner' : 'Crear Nuevo Banner' ]]
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form @submit.prevent="saveBanner">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="bannerName" class="form-label">Nombre del Banner *</label>
+                                <input 
+                                    type="text" 
+                                    class="form-control" 
+                                    id="bannerName"
+                                    v-model="bannerForm.name" 
+                                    required
+                                    placeholder="Ej: Banner Principal"
+                                >
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="bannerDescription" class="form-label">Descripción</label>
+                                <input 
+                                    type="text" 
+                                    class="form-control" 
+                                    id="bannerDescription"
+                                    v-model="bannerForm.description" 
+                                    placeholder="Descripción opcional"
+                                >
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="rotationInterval" class="form-label">Intervalo de Rotación (ms)</label>
+                                <input 
+                                    type="number" 
+                                    class="form-control" 
+                                    id="rotationInterval"
+                                    v-model="bannerForm.rotation_interval" 
+                                    min="1000"
+                                    step="1000"
+                                >
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="mb-3">
+                                <label for="bannerWidth" class="form-label">Ancho</label>
+                                <input 
+                                    type="number" 
+                                    class="form-control" 
+                                    id="bannerWidth"
+                                    v-model="bannerForm.width" 
+                                    min="100"
+                                >
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="mb-3">
+                                <label for="bannerHeight" class="form-label">Alto</label>
+                                <input 
+                                    type="number" 
+                                    class="form-control" 
+                                    id="bannerHeight"
+                                    v-model="bannerForm.height" 
+                                    min="100"
+                                >
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mb-3">
+                                <input 
+                                    class="form-check-input" 
+                                    type="checkbox" 
+                                    id="autoRotate"
+                                    v-model="bannerForm.auto_rotate"
+                                >
+                                <label class="form-check-label" for="autoRotate">
+                                    Auto-rotación de slides
+                                </label>
+                            </div>
+                            <div class="form-check form-switch mb-3">
+                                <input 
+                                    class="form-check-input" 
+                                    type="checkbox" 
+                                    id="showController"
+                                    v-model="bannerForm.show_controller"
+                                >
+                                <label class="form-check-label" for="showController">
+                                    Mostrar controladores
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check form-switch mb-3">
+                                <input 
+                                    class="form-check-input" 
+                                    type="checkbox" 
+                                    id="responsive"
+                                    v-model="bannerForm.responsive"
+                                >
+                                <label class="form-check-label" for="responsive">
+                                    Responsive (auto-ajuste)
+                                </label>
+                            </div>
+                            <div class="form-check form-switch mb-3">
+                                <input 
+                                    class="form-check-input" 
+                                    type="checkbox" 
+                                    id="enableSocketio"
+                                    v-model="bannerForm.enable_socketio"
+                                >
+                                <label class="form-check-label" for="enableSocketio">
+                                    Habilitar tiempo real (SocketIO)
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" @click="saveBanner" :disabled="saving">
+                    <span v-if="saving">
+                        <span class="spinner-border spinner-border-sm me-2"></span>
+                        Guardando...
+                    </span>
+                    <span v-else>
+                        <i class="bi bi-check me-2"></i>
+                        [[ isEditMode ? 'Actualizar' : 'Crear' ]] Banner
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para gestionar slides -->
+<div class="modal fade" id="slidesModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-collection me-2"></i>
+                    Gestionar Slides - [[ selectedBanner.name ]]
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Formulario para agregar slide -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h6 class="card-title mb-0">Agregar Nuevo Slide</h6>
+                    </div>
+                    <div class="card-body">
+                        <form @submit.prevent="addSlide">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label for="slideTitle" class="form-label">Título *</label>
+                                        <input 
+                                            type="text" 
+                                            class="form-control" 
+                                            id="slideTitle"
+                                            v-model="slideForm.title" 
+                                            required
+                                            placeholder="Título del slide"
+                                        >
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label for="slideImageUrl" class="form-label">URL de Imagen</label>
+                                        <input 
+                                            type="url" 
+                                            class="form-control" 
+                                            id="slideImageUrl"
+                                            v-model="slideForm.image_url" 
+                                            placeholder="https://ejemplo.com/imagen.jpg"
+                                        >
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label for="slideLinkUrl" class="form-label">URL de Enlace</label>
+                                        <input 
+                                            type="url" 
+                                            class="form-control" 
+                                            id="slideLinkUrl"
+                                            v-model="slideForm.link_url" 
+                                            placeholder="https://ejemplo.com"
+                                        >
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-8">
+                                    <div class="mb-3">
+                                        <label for="slideContent" class="form-label">Contenido</label>
+                                        <textarea 
+                                            class="form-control" 
+                                            id="slideContent"
+                                            v-model="slideForm.content" 
+                                            rows="2"
+                                            placeholder="Contenido del slide"
+                                        ></textarea>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label for="slideDuration" class="form-label">Duración (ms)</label>
+                                        <input 
+                                            type="number" 
+                                            class="form-control" 
+                                            id="slideDuration"
+                                            v-model="slideForm.duration" 
+                                            min="1000"
+                                            step="1000"
+                                        >
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-end">
+                                <button type="submit" class="btn btn-success" :disabled="addingSlide">
+                                    <span v-if="addingSlide">
+                                        <span class="spinner-border spinner-border-sm me-2"></span>
+                                        Agregando...
+                                    </span>
+                                    <span v-else>
+                                        <i class="bi bi-plus me-2"></i>Agregar Slide
+                                    </span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Lista de slides existentes -->
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="card-title mb-0">Slides Existentes ([[ bannerSlides.length ]])</h6>
+                    </div>
+                    <div class="card-body">
+                        <div v-if="bannerSlides.length === 0" class="text-center py-4 text-muted">
+                            <i class="bi bi-collection" style="font-size: 2rem; opacity: 0.3;"></i>
+                            <div class="mt-2">No hay slides configurados</div>
+                        </div>
+                        <div v-else class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Orden</th>
+                                        <th>Título</th>
+                                        <th>Contenido</th>
+                                        <th>Imagen</th>
+                                        <th>Estado</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="slide in bannerSlides" :key="slide.id">
+                                        <td>
+                                            <span class="badge bg-secondary">[[ slide.order_index ]]</span>
+                                        </td>
+                                        <td>
+                                            <strong>[[ slide.title ]]</strong>
+                                        </td>
+                                        <td>
+                                            <small class="text-muted">[[ slide.content || 'Sin contenido' ]]</small>
+                                        </td>
+                                        <td>
+                                            <span v-if="slide.image_url" class="badge bg-info">Con imagen</span>
+                                            <span v-else class="badge bg-warning">Sin imagen</span>
+                                        </td>
+                                        <td>
+                                            <span v-if="slide.is_active" class="badge bg-success">Activo</span>
+                                            <span v-else class="badge bg-secondary">Inactivo</span>
+                                        </td>
+                                        <td>
+                                            <button 
+                                                class="btn btn-sm btn-outline-danger"
+                                                @click="deleteSlide(slide.id, slide.title)"
+                                                title="Eliminar slide"
+                                            >
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                <button type="button" class="btn btn-primary" @click="refreshBannerInLaunchers">
+                    <i class="bi bi-arrow-clockwise me-2"></i>Actualizar en Launchers
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block vue_script %}
+<script>
+    // Prevenir instancia Vue por defecto
+    window.DISABLE_DEFAULT_VUE = true;
+</script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('🚀 Iniciando Banners Management Vue.js');
+
+        Vue.config.delimiters = ['[[', ']]'];
+
+        const bannersApp = new Vue({
+            el: '#app',
+            delimiters: ['[[', ']]'],
+            mixins: [NotificationMixin, HttpMixin, UtilsMixin, SocketMixin],
+
+            data() {
+                return {
+                    // Estados principales
+                    loading: false,
+                    saving: false,
+                    addingSlide: false,
+                    loadingMessage: 'Cargando...',
+
+                    // Datos de banners
+                    banners: [],
+                    stats: {
+                        totalBanners: 0,
+                        activeBanners: 0,
+                        totalSlides: 0
+                    },
+
+                    // Modal de banner
+                    isEditMode: false,
+                    bannerForm: {
+                        id: null,
+                        name: '',
+                        description: '',
+                        auto_rotate: true,
+                        rotation_interval: 6000,
+                        responsive: true,
+                        show_controller: true,
+                        width: 775,
+                        height: 394,
+                        enable_socketio: true,
+                        enable_real_time: true
+                    },
+
+                    // Modal de slides
+                    selectedBanner: {},
+                    bannerSlides: [],
+                    slideForm: {
+                        title: '',
+                        content: '',
+                        image_url: '',
+                        link_url: '',
+                        duration: 6000
+                    },
+
+                    // SocketIO
+                    isSocketConnected: false,
+                    socket: null
+                };
+            },
+
+            computed: {
+                activeBannerName() {
+                    const activeBanner = this.banners.find(b => b.is_active);
+                    return activeBanner ? activeBanner.name : 'Ninguno';
+                }
+            },
+
+            mounted() {
+                console.log('✅ Banners Management Vue montado');
+                this.initSocket();
+                this.loadBannersData();
+            },
+
+            methods: {
+                async loadBannersData() {
+                    this.setLoading(true, 'Cargando banners...');
+                    try {
+                        const data = await this.apiGet('/admin/api/banners_data');
+                        this.banners = data.banners;
+                        this.stats = data.stats;
+                        console.log('✅ Banners cargados:', this.banners.length);
+                    } catch (error) {
+                        this.showError('Error', 'No se pudieron cargar los banners');
+                        console.error('Error loading banners:', error);
+                    } finally {
+                        this.setLoading(false);
+                    }
+                },
+
+                showCreateBannerModal() {
+                    this.isEditMode = false;
+                    this.resetBannerForm();
+                    this.showModal('bannerModal');
+                },
+
+                editBanner(banner) {
+                    this.isEditMode = true;
+                    this.bannerForm = { ...banner };
+                    this.showModal('bannerModal');
+                },
+
+                resetBannerForm() {
+                    this.bannerForm = {
+                        id: null,
+                        name: '',
+                        description: '',
+                        auto_rotate: true,
+                        rotation_interval: 6000,
+                        responsive: true,
+                        show_controller: true,
+                        width: 775,
+                        height: 394,
+                        enable_socketio: true,
+                        enable_real_time: true
+                    };
+                },
+
+                async saveBanner() {
+                    this.saving = true;
+                    try {
+                        const url = this.isEditMode ? 
+                            `/admin/banners/${this.bannerForm.id}/update` : 
+                            '/admin/banners/create';
+                        
+                        const response = await this.apiPost(url, this.bannerForm);
+                        
+                        this.showSuccess('Banner guardado', response.message);
+                        this.hideModal('bannerModal');
+                        await this.loadBannersData();
+                        
+                    } catch (error) {
+                        console.error('Error saving banner:', error);
+                    } finally {
+                        this.saving = false;
+                    }
+                },
+
+                async setActiveBanner(bannerId) {
+                    const confirmed = await this.showConfirmation(
+                        '¿Activar banner?',
+                        'Esto desactivará el banner actual y activará el seleccionado.',
+                        'Sí, activar'
+                    );
+
+                    if (!confirmed) return;
+
+                    try {
+                        const response = await this.apiPost(`/admin/banners/${bannerId}/set_active`);
+                        this.showSuccess('Banner activado', response.message);
+                        await this.loadBannersData();
+                    } catch (error) {
+                        console.error('Error setting active banner:', error);
+                    }
+                },
+
+                async deleteBanner(bannerId, bannerName) {
+                    const confirmed = await this.showConfirmation(
+                        'Eliminar banner',
+                        `¿Está seguro de que desea eliminar "${bannerName}"? Esta acción no se puede deshacer.`,
+                        'Sí, eliminar'
+                    );
+
+                    if (!confirmed) return;
+
+                    try {
+                        const response = await this.apiPost(`/admin/banners/${bannerId}/delete`);
+                        this.showSuccess('Banner eliminado', response.message);
+                        await this.loadBannersData();
+                    } catch (error) {
+                        console.error('Error deleting banner:', error);
+                    }
+                },
+
+                async manageBannerSlides(banner) {
+                    this.selectedBanner = banner;
+                    await this.loadBannerSlides(banner.id);
+                    this.showModal('slidesModal');
+                },
+
+                async loadBannerSlides(bannerId) {
+                    try {
+                        const data = await this.apiGet(`/admin/banners/${bannerId}/slides`);
+                        this.bannerSlides = data.slides;
+                        console.log('✅ Slides cargados:', this.bannerSlides.length);
+                    } catch (error) {
+                        this.showError('Error', 'No se pudieron cargar los slides');
+                        console.error('Error loading slides:', error);
+                    }
+                },
+
+                async addSlide() {
+                    if (!this.slideForm.title.trim()) {
+                        this.showWarning('Campo requerido', 'El título del slide es requerido');
+                        return;
+                    }
+
+                    this.addingSlide = true;
+                    try {
+                        const response = await this.apiPost(`/admin/banners/${this.selectedBanner.id}/slides/add`, this.slideForm);
+                        this.showSuccess('Slide agregado', response.message);
+                        this.resetSlideForm();
+                        await this.loadBannerSlides(this.selectedBanner.id);
+                    } catch (error) {
+                        console.error('Error adding slide:', error);
+                    } finally {
+                        this.addingSlide = false;
+                    }
+                },
+
+                resetSlideForm() {
+                    this.slideForm = {
+                        title: '',
+                        content: '',
+                        image_url: '',
+                        link_url: '',
+                        duration: 6000
+                    };
+                },
+
+                async deleteSlide(slideId, slideTitle) {
+                    const confirmed = await this.showConfirmation(
+                        'Eliminar slide',
+                        `¿Eliminar el slide "${slideTitle}"?`,
+                        'Sí, eliminar'
+                    );
+
+                    if (!confirmed) return;
+
+                    try {
+                        const response = await this.apiPost(`/admin/slides/${slideId}/delete`);
+                        this.showSuccess('Slide eliminado', response.message);
+                        await this.loadBannerSlides(this.selectedBanner.id);
+                    } catch (error) {
+                        console.error('Error deleting slide:', error);
+                    }
+                },
+
+                async refreshBannerInLaunchers() {
+                    try {
+                        const response = await this.apiPost('/api/banner/refresh');
+                        this.showSuccess('Banner actualizado', response.message);
+                    } catch (error) {
+                        console.error('Error refreshing banner:', error);
+                    }
+                },
+
+                async testBanner() {
+                    try {
+                        const response = await this.apiPost('/admin/api/banner/test_data', {
+                            type: 'full'
+                        });
+                        this.showSuccess('Test enviado', response.message);
+                    } catch (error) {
+                        console.error('Error testing banner:', error);
+                    }
+                },
+
+                async refreshData() {
+                    await this.loadBannersData();
+                    this.showInfo('Actualizado', 'Datos actualizados correctamente');
+                },
+
+                // Utilities
+                showModal(modalId) {
+                    const modal = new bootstrap.Modal(document.getElementById(modalId));
+                    modal.show();
+                },
+
+                hideModal(modalId) {
+                    const modal = bootstrap.Modal.getInstance(document.getElementById(modalId));
+                    if (modal) modal.hide();
+                },
+
+                setLoading(isLoading, message = 'Cargando...') {
+                    this.loading = isLoading;
+                    this.loadingMessage = message;
+                },
+
+                testSocketConnection() {
+                    if (this.isSocketConnected) {
+                        this.emitSocket('ping');
+                        this.showInfo('Test SocketIO', 'Ping enviado al servidor');
+                    } else {
+                        this.showWarning('Sin conexión', 'SocketIO no está conectado');
+                    }
+                }
+            }
+        });
+
+        // Exponer para debugging
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            window.bannersApp = bannersApp;
+            console.log('✅ Banners app disponible en window.bannersApp');
+        }
+
+        console.log('✅ Banners Management Vue.js inicializado exitosamente');
+    });
+</script>
+{% endblock %}

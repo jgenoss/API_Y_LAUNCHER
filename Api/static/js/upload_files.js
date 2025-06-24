@@ -53,9 +53,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 urls: window.UPLOAD_FILES_DATA.urls || {},
                 
                 // Formulario
-                form: {
-                    versionId: ''
-                },
+                form: {},
                 
                 // Archivos seleccionados
                 selectedFiles: [],
@@ -75,7 +73,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Errores de validación
                 errors: {
-                    version: '',
                     files: ''
                 },
                 
@@ -93,13 +90,6 @@ document.addEventListener('DOMContentLoaded', function() {
         },
         
         computed: {
-            /**
-             * Versión seleccionada actualmente
-             */
-            selectedVersion() {
-                if (!this.form.versionId) return null;
-                return this.versionsData.find(v => v.id == this.form.versionId);
-            },
             
             /**
              * Tamaño total de archivos seleccionados
@@ -113,9 +103,7 @@ document.addEventListener('DOMContentLoaded', function() {
              * Verificar si el formulario es válido
              */
             isFormValid() {
-                return this.form.versionId && 
-                       this.selectedFiles.length > 0 && 
-                       !this.errors.version && 
+                return this.selectedFiles.length > 0 && 
                        !this.errors.files &&
                        !this.uploading;
             }
@@ -128,52 +116,11 @@ document.addEventListener('DOMContentLoaded', function() {
             this.initSocket();
             
             // Pre-seleccionar versión latest si existe
-            this.selectLatestVersion();
             
             console.log('Upload Files inicializado correctamente');
         },
         
         methods: {
-            /**
-             * Seleccionar automáticamente la versión latest
-             */
-            selectLatestVersion() {
-                const latestVersion = this.versions.find(v => v.is_latest);
-                if (latestVersion) {
-                    this.form.versionId = latestVersion.id;
-                    this.loadVersionInfo();
-                }
-            },
-            
-            /**
-             * Cargar información de la versión seleccionada
-             */
-            loadVersionInfo() {
-                this.validateVersion();
-                
-                if (this.selectedVersion) {
-                    console.log('Versión seleccionada:', this.selectedVersion);
-                }
-            },
-            
-            /**
-             * Validar versión seleccionada
-             */
-            validateVersion() {
-                if (!this.form.versionId) {
-                    this.errors.version = 'Debes seleccionar una versión';
-                    return false;
-                }
-                
-                const version = this.selectedVersion;
-                if (!version) {
-                    this.errors.version = 'Versión no válida';
-                    return false;
-                }
-                
-                this.errors.version = '';
-                return true;
-            },
             
             /**
              * Triggear selección de archivos
@@ -406,22 +353,15 @@ document.addEventListener('DOMContentLoaded', function() {
             async submitFiles() {
                 console.log('Enviando formulario de archivos...');
                 
-                // Validación final
-                if (!this.validateVersion()) {
-                    this.showError('Formulario inválido', 'Selecciona una versión válida');
-                    return;
-                }
-                
                 if (this.selectedFiles.length === 0) {
                     this.showError('Formulario inválido', 'Selecciona al menos un archivo');
                     return;
                 }
                 
                 // Confirmar antes de subir
-                const version = this.selectedVersion;
                 const confirmed = await this.showConfirmation(
                     '¿Subir archivos?',
-                    `Se subirán ${this.selectedFiles.length} archivo(s) a la versión ${version.version}. ` +
+                    `Se subirán ${this.selectedFiles.length} archivo(s)` +
                     `Tamaño total: ${this.totalFilesSize}`,
                     'Sí, subir'
                 );
@@ -434,7 +374,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 try {
                     // Preparar FormData
                     const formData = new FormData();
-                    formData.append('version_id', this.form.versionId);
                     
                     // Agregar archivos
                     this.selectedFiles.forEach(file => {
@@ -448,7 +387,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     });
                     
                     console.log('Enviando datos:', {
-                        version_id: this.form.versionId,
                         files_count: this.selectedFiles.length,
                         total_size: this.selectedFiles.reduce((sum, file) => sum + file.size, 0)
                     });
@@ -468,13 +406,12 @@ document.addEventListener('DOMContentLoaded', function() {
                         
                         this.showSuccess(
                             '¡Archivos subidos!',
-                            `${this.selectedFiles.length} archivo(s) subido(s) exitosamente a la versión ${version.version}`
+                            `${this.selectedFiles.length} archivo(s) subido(s) exitosamente`
                         );
                         
                         // Emitir evento SocketIO si está conectado
                         if (this.isSocketConnected) {
                             this.emitSocket('files_uploaded', {
-                                version: version.version,
                                 count: this.selectedFiles.length,
                                 total_size: this.selectedFiles.reduce((sum, file) => sum + file.size, 0)
                             });
@@ -587,16 +524,6 @@ document.addEventListener('DOMContentLoaded', function() {
         },
         
         watch: {
-            /**
-             * Observar cambios en la versión seleccionada
-             */
-            'form.versionId'(newValue) {
-                if (newValue) {
-                    this.validateVersion();
-                } else {
-                    this.errors.version = '';
-                }
-            },
             
             /**
              * Observar cambios en archivos seleccionados

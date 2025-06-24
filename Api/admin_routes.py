@@ -386,8 +386,9 @@ def get_files_data():
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 50, type=int)
         
-        query = GameFile.query.order_by(GameFile.created_at.desc())
-        files_paginated = query.order_by(GameFile.created_at.desc()).paginate(
+        
+        
+        files_paginated = GameFile.query.order_by(GameFile.created_at.desc()).paginate(
             page=page, per_page=per_page, error_out=False
         )
 
@@ -400,17 +401,9 @@ def get_files_data():
                 'md5_hash': file.md5_hash,
                 'file_size': file.file_size, # En bytes
                 'file_size_formatted': format_file_size(file.file_size) if file.file_size else '0 B',
-                'version_id': file.version_id,
                 'created_at': file.created_at.isoformat() if file.created_at else None,
                 'updated_at': file.updated_at.isoformat() if file.updated_at else None,
-                'version': None
             }
-            if file.version:
-                file_dict['version'] = {
-                    'id': file.version.id,
-                    'version': file.version.version,
-                    'is_latest': file.version.is_latest
-                }
             files_data.append(file_dict)
 
         # También enviar los URLs necesarios para acciones desde el cliente
@@ -442,10 +435,8 @@ def upload_files():
     """Subir archivos del juego"""
     if request.method == 'POST':
         try:
-            version_id = request.form['version_id']
             uploaded_files = request.files.getlist('files')
             
-            version = GameVersion.query.get_or_404(version_id)
             files_uploaded = 0
             
             for file in uploaded_files:
@@ -463,25 +454,21 @@ def upload_files():
                     file_size = os.path.getsize(file_path)
                     
                     # Verificar si el archivo ya existe
-                    existing_file = GameFile.query.filter_by(
-                        filename=filename, 
-                        version_id=version_id
-                    ).first()
+                    existing_file = GameFile.query.filter_by(filename=filename).first()
                     
                     if existing_file:
                         # Actualizar archivo existente
                         existing_file.md5_hash = md5_hash
                         existing_file.file_size = file_size
                         existing_file.relative_path = relative_path
-                        existing_file.updated_at = datetime.utcnow()
+                        existing_file.updated_at = datetime.now()
                     else:
                         # Crear nuevo registro
                         game_file = GameFile(
                             filename=filename,
                             relative_path=relative_path,
                             md5_hash=md5_hash,
-                            file_size=file_size,
-                            version_id=version_id
+                            file_size=file_size
                         )
                         db.session.add(game_file)
                     
@@ -494,10 +481,8 @@ def upload_files():
         except Exception as e:
             db.session.rollback()
             flash(f'Error al subir archivos: {str(e)}', 'error')
-    
-    versions = GameVersion.query.order_by(GameVersion.version.desc()).all()
-    versions_data = [v.to_dict() for v in versions]
-    return render_template('admin/upload_files.html', versions=versions, versions_data=versions_data)
+
+    return render_template('admin/upload_files.html')
 
 
 @admin_bp.route('/updates')

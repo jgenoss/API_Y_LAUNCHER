@@ -176,7 +176,6 @@ class GameFile(db.Model):
     relative_path = db.Column(db.String(500), nullable=False)
     md5_hash = db.Column(db.String(32), nullable=False)
     file_size = db.Column(db.Integer)
-    version_id = db.Column(db.Integer, db.ForeignKey('launcher_game_version.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

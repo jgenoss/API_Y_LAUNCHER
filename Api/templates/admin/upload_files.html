@@ -224,8 +224,6 @@
 <script>
     // Transferir datos del servidor a JavaScript
     window.UPLOAD_FILES_DATA = {
-        versions: {{ versions_data | tojson | safe }},
-    versionsData: { { versions_data | tojson | safe } },
     urls: {
         submit: "{{ url_for('admin.upload_files') }}"
     }

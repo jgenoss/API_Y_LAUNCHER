@@ -100,6 +100,23 @@ document.addEventListener('DOMContentLoaded', function () {
         },
 
         computed: {
+            currentPage() {
+                return this.pagination.page;
+            },
+
+            /**
+             * Total de páginas (para compatibilidad con template)
+             */
+            totalPages() {
+                return this.pagination.pages;
+            },
+
+            /**
+             * Items por página (para compatibilidad)
+             */
+            itemsPerPage() {
+                return this.pagination.perPage;
+            },
             /**
              * Archivos filtrados localmente (solo por búsqueda, extensión, tamaño, paginación viene de la API)
              */
@@ -248,6 +265,12 @@ document.addEventListener('DOMContentLoaded', function () {
         },
 
         methods: {
+            changePage(page) {
+                if (page >= 1 && page <= this.totalPages && page !== this.currentPage) {
+                    this.pagination.page = page;
+                    // Si cargas datos via API, aquí llamarías a loadFilesData()
+                }
+            },
             /**
              * Cargar datos de archivos desde la API con los filtros actuales
              */
@@ -559,7 +582,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     }, 300);
                 }
             },
-            
+
             'filters.extension': function () {
                 this.loadFilesData(); // Recargar al cambiar extensión
             },

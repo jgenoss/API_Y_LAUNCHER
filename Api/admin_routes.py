@@ -185,9 +185,9 @@ def create_version():
 @admin_bp.route('/api/versions_data', methods=['GET'])
 @login_required
 def get_versions_data():
-    """API para obtener los datos de las versiones."""
+    """API para obtener los datos de las versiones (SIN archivos asociados)."""
     try:
-        # Obtener todas las versiones con sus relaciones
+        # Obtener todas las versiones con sus relaciones (solo update_packages)
         versions = GameVersion.query.order_by(GameVersion.created_at.desc()).all()
 
         versions_data = []
@@ -199,21 +199,12 @@ def get_versions_data():
                 'release_notes': version.release_notes,
                 'created_at': version.created_at.isoformat() if version.created_at else None,
                 'created_by': version.created_by,
-                'files': [],
                 'update_packages': []
+                # ❌ REMOVIDO: 'files': [] - Los archivos ahora son independientes
             }
             
-            # Agregar archivos
-            if version.files:
-                for file in version.files:
-                    version_dict['files'].append({
-                        'id': file.id,
-                        'filename': file.filename,
-                        'relative_path': file.relative_path,
-                        'md5_hash': file.md5_hash,
-                        'file_size': file.file_size,
-                        'created_at': file.created_at.isoformat() if file.created_at else None
-                    })
+            # ❌ REMOVIDO: Código para agregar archivos asociados
+            # Los archivos de reparación son independientes de versiones
             
             # Agregar paquetes de actualización
             if version.update_packages:
@@ -231,23 +222,23 @@ def get_versions_data():
         # Calcular estadísticas
         total_versions = len(versions)
         latest_version = GameVersion.get_latest()
-        versions_with_files = len([v for v in versions if v.files])
-        versions_with_updates = len([v for v in versions if v.update_packages])
+        
+        # ❌ REMOVIDO: versions_with_files - Los archivos son independientes ahora
+        versions_with_packages = len([v for v in versions if v.update_packages])
 
         return jsonify({
             'versions': versions_data,
             'stats': {
-                'totalVersions': total_versions,
-                'latestVersion': latest_version.version if latest_version else '',
-                'versionsWithFiles': versions_with_files,
-                'versionsWithUpdates': versions_with_updates
+                'total_versions': total_versions,
+                'latest_version': latest_version.version if latest_version else None,
+                'versions_with_packages': versions_with_packages
+                # ❌ REMOVIDO: 'versions_with_files'
             }
         })
-
     except Exception as e:
         current_app.logger.error(f"Error fetching versions data: {e}")
         return jsonify({'error': 'Error al cargar datos de versiones', 'details': str(e)}), 500
-
+    
 @admin_bp.route('/versions/<int:version_id>/set_latest', methods=['POST'])
 @login_required
 def set_latest_version_api(version_id):
@@ -302,7 +293,7 @@ def set_latest_version_api(version_id):
 @admin_bp.route('/versions/<int:version_id>/delete', methods=['POST'])
 @login_required
 def delete_version_api(version_id):
-    """Eliminar versión - Compatible con API"""
+    """Eliminar versión (SIN eliminar archivos de reparación)"""
     try:
         version = GameVersion.query.get_or_404(version_id)
         
@@ -316,53 +307,37 @@ def delete_version_api(version_id):
         
         version_name = version.version
         
-        # Eliminar archivos asociados
-        for game_file in version.files:
-            file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], 'files', game_file.filename)
-            if os.path.exists(file_path):
-                os.remove(file_path)
-            db.session.delete(game_file)
+        # ❌ REMOVIDO: Código para eliminar archivos asociados
+        # Los archivos de reparación son independientes y NO se eliminan
         
-        # Eliminar paquetes de actualización
+        # ✅ SOLO eliminar paquetes de actualización (que sí dependen de versiones)
         for update_package in version.update_packages:
             if os.path.exists(update_package.file_path):
                 os.remove(update_package.file_path)
             db.session.delete(update_package)
         
+        # Eliminar la versión
         db.session.delete(version)
         db.session.commit()
         
-        # Notificar via SocketIO
-        try:
-            from socketio_utils import notify_admin
-            notify_admin(
-                f'Versión {version_name} eliminada exitosamente',
-                'success',
-                {
-                    'action': 'version_deleted',
-                    'version': version_name,
-                    'version_id': version_id
-                }
-            )
-        except ImportError:
-            pass
+        success_msg = f'Versión {version_name} eliminada exitosamente'
+        current_app.logger.info(success_msg)
         
         if request.is_json or request.headers.get('Content-Type') == 'application/json':
-            return jsonify({
-                'success': True,
-                'message': f'Versión {version_name} eliminada exitosamente'
-            })
+            return jsonify({'success': True, 'message': success_msg})
         else:
-            flash(f'Versión {version_name} eliminada exitosamente', 'success')
+            flash(success_msg, 'success')
             return redirect(url_for('admin.versions'))
             
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error deleting version: {e}")
+        error_msg = f"Error eliminando versión: {str(e)}"
+        current_app.logger.error(error_msg)
+        
         if request.is_json or request.headers.get('Content-Type') == 'application/json':
-            return jsonify({'error': str(e)}), 500
+            return jsonify({'error': error_msg}), 500
         else:
-            flash(f'Error al eliminar versión: {str(e)}', 'error')
+            flash(error_msg, 'error')
             return redirect(url_for('admin.versions'))
 
 
@@ -432,58 +407,90 @@ def get_files_data():
 @admin_bp.route('/files/upload', methods=['GET', 'POST'])
 @login_required
 def upload_files():
-    """Subir archivos del juego"""
+    """Subir archivos de reparación del juego (independientes de versión)"""
     if request.method == 'POST':
         try:
             uploaded_files = request.files.getlist('files')
+            if not uploaded_files or not any(f.filename for f in uploaded_files):
+                flash('No se seleccionaron archivos para subir', 'warning')
+                return redirect(url_for('admin.upload_files'))
             
             files_uploaded = 0
+            files_updated = 0
             
-            for file in uploaded_files:
+            current_app.logger.info(f"Iniciando subida de {len(uploaded_files)} archivos de reparación")
+            
+            for i, file in enumerate(uploaded_files):
                 if file and file.filename:
-                    filename = secure_filename(file.filename)
-                    relative_path = request.form.get(f'relative_path_{file.filename}', f'bin/{filename}')
-                    
-                    # Guardar archivo
-                    file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], 'files', filename)
-                    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-                    file.save(file_path)
-                    
-                    # Calcular MD5
-                    md5_hash = calculate_md5(file_path)
-                    file_size = os.path.getsize(file_path)
-                    
-                    # Verificar si el archivo ya existe
-                    existing_file = GameFile.query.filter_by(filename=filename).first()
-                    
-                    if existing_file:
-                        # Actualizar archivo existente
-                        existing_file.md5_hash = md5_hash
-                        existing_file.file_size = file_size
-                        existing_file.relative_path = relative_path
-                        existing_file.updated_at = datetime.now()
-                    else:
-                        # Crear nuevo registro
-                        game_file = GameFile(
-                            filename=filename,
-                            relative_path=relative_path,
-                            md5_hash=md5_hash,
-                            file_size=file_size
-                        )
-                        db.session.add(game_file)
-                    
-                    files_uploaded += 1
+                    try:
+                        filename = secure_filename(file.filename)
+                        relative_path = request.form.get(f'relative_path_{i}', f'bin/{filename}')
+                        
+                        current_app.logger.info(f"Procesando archivo de reparación: {filename} -> {relative_path}")
+                        
+                        # Guardar archivo físico
+                        file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], 'files', filename)
+                        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                        file.save(file_path)
+                        
+                        # Calcular MD5 y tamaño
+                        md5_hash = calculate_md5(file_path)
+                        file_size = os.path.getsize(file_path)
+                        
+                        current_app.logger.info(f"Archivo guardado: {file_path} ({file_size} bytes, MD5: {md5_hash})")
+                        
+                        # Verificar si el archivo ya existe (solo por filename, sin version_id)
+                        existing_file = GameFile.query.filter_by(filename=filename).first()
+                        
+                        if existing_file:
+                            # Actualizar archivo existente
+                            existing_file.md5_hash = md5_hash
+                            existing_file.file_size = file_size
+                            existing_file.relative_path = relative_path
+                            existing_file.updated_at = datetime.utcnow()
+                            files_updated += 1
+                            current_app.logger.info(f"Archivo de reparación actualizado: {filename}")
+                        else:
+                            # Crear nuevo registro (SIN version_id)
+                            game_file = GameFile(
+                                filename=filename,
+                                relative_path=relative_path,
+                                md5_hash=md5_hash,
+                                file_size=file_size
+                            )
+                            db.session.add(game_file)
+                            files_uploaded += 1
+                            current_app.logger.info(f"Nuevo archivo de reparación creado: {filename}")
+                            
+                    except Exception as file_error:
+                        current_app.logger.error(f"Error procesando archivo {file.filename}: {str(file_error)}")
+                        db.session.rollback()
+                        flash(f'Error procesando archivo {file.filename}: {str(file_error)}', 'error')
+                        return redirect(url_for('admin.upload_files'))
             
             db.session.commit()
-            flash(f'{files_uploaded} archivos subidos exitosamente', 'success')
+            
+            success_parts = []
+            if files_uploaded > 0:
+                success_parts.append(f'{files_uploaded} archivos nuevos subidos')
+            if files_updated > 0:
+                success_parts.append(f'{files_updated} archivos actualizados')
+            
+            success_msg = ', '.join(success_parts) + ' como archivos de reparación'
+            flash(success_msg, 'success')
+            current_app.logger.info(f"Subida completada exitosamente: {success_msg}")
+            
             return redirect(url_for('admin.files'))
             
         except Exception as e:
             db.session.rollback()
-            flash(f'Error al subir archivos: {str(e)}', 'error')
+            error_msg = f'Error general al subir archivos de reparación: {str(e)}'
+            current_app.logger.error(error_msg)
+            flash(error_msg, 'error')
+            return redirect(url_for('admin.upload_files'))
 
+    # GET: Renderizar formulario simple (sin selección de versiones)
     return render_template('admin/upload_files.html')
-
 
 @admin_bp.route('/updates')
 @login_required

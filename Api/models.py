@@ -102,7 +102,6 @@ class GameVersion(db.Model):
     
     # Relaciones
     update_packages = db.relationship('UpdatePackage', backref='version', lazy=True)
-    files = db.relationship('GameFile', backref='version', lazy=True)
 
     def __repr__(self):
         return f'<GameVersion {self.version}>'
@@ -138,7 +137,6 @@ class GameVersion(db.Model):
             'release_notes': self.release_notes,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             'created_by': self.created_by,
-            'files': [f.to_dict() for f in self.files],
             'update_packages': [u.id for u in self.update_packages]
         }
 
@@ -152,7 +150,7 @@ class UpdatePackage(db.Model):
     md5_hash = db.Column(db.String(32))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     uploaded_by = db.Column(db.Integer, db.ForeignKey('launcher_user.id'))
-
+    
     def __repr__(self):
         return f'<UpdatePackage {self.filename}>'
     
@@ -178,7 +176,7 @@ class GameFile(db.Model):
     file_size = db.Column(db.Integer)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
+    
     def __repr__(self):
         return f'<GameFile {self.filename}>'
 

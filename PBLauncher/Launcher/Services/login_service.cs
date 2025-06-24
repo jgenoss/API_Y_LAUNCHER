@@ -139,7 +139,7 @@ namespace PBLauncher
         public event Action<string, LoginErrorType> OnLoginFailed;
         public event Action OnLogout;
 
-        public LoginService(string serverUrl = "http://148.113.181.41:5000")
+        public LoginService(string serverUrl = "http://192.168.18.31:5000")
         {
             _serverUrl = serverUrl.TrimEnd('/');
 

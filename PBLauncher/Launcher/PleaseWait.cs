@@ -19,7 +19,7 @@ namespace PBLauncher
     {
         private Axios axios;
         private SystemStatusService statusService;
-        private string apiBaseUrl = "http://148.113.181.41:5000/api";
+        private string apiBaseUrl = "http://192.168.18.31:5000/api";
         private int maxRetries = 3;
         private int currentRetry = 0;
 

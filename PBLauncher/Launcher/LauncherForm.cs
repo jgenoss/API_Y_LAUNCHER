@@ -55,9 +55,9 @@ namespace PBLauncher
         private const string FileHashesFile = "file_hashes.jg";
         private const string UpdatesPath = "updates/";
         private const string LogFile = "launcher.log";
-        private string Urls = "http://148.113.181.41:5000/api/";
-        private string UrbBanner = "http://148.113.181.41:5000/api/banner/live";
-        Axios axios = new Axios("http://148.113.181.41:5000/api");
+        private string Urls = "http://192.168.18.31:5000/api/";
+        private string UrbBanner = "http://192.168.18.31:5000/api/banner/live";
+        Axios axios = new Axios("http://192.168.18.31:5000/api");
 
         // Variables de estado
         private CancellationTokenSource cancellationTokenSource;
@@ -352,15 +352,6 @@ namespace PBLauncher
                 LogMessage($"Error en reconexión: {ex.Message}");
                 UpdateSocketIOStatus("Error de reconexión");
             }
-        }
-
-        public async Task<bool> IsFileValid(string filename)
-        {
-            var response = await httpClient.GetAsync($"/api/file/{filename}/verify");
-            var fileInfo = JsonConvert.DeserializeObject<FileVerificationResponse>(response);
-
-            // Verificar solo archivos que realmente necesitan reparación
-            return VerifyLocalMD5(filename) == fileInfo.md5;
         }
         private async Task<bool> VerifyServerResponse()
         {
@@ -923,6 +914,21 @@ namespace PBLauncher
 
             foreach (var fileInfo in serverData.FileHashes)
             {
+
+                // ✅ VALIDACIÓN ANTES DE USAR Path.Combine
+                if (string.IsNullOrWhiteSpace(fileInfo.RelativePath))
+                {
+                    LogMessage($"⚠️ RelativePath nulo para {fileInfo.FileName}, saltando...");
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(fileInfo.FileName))
+                {
+                    LogMessage("⚠️ FileName nulo, saltando...");
+                    continue;
+                }
+
+                // ✅ CONSTRUCCIÓN SEGURA DE RUTA
                 string localPath = Path.Combine("./", fileInfo.RelativePath);
 
                 if (!await VerifyFileIntegrity(localPath, fileInfo.MD5Hash))
@@ -2330,7 +2336,7 @@ namespace PBLauncher
             try
             {
                 // Configurar URL del servidor (cambiar según tu configuración)
-                string serverUrl = "http://148.113.181.41:5000"; // Cambiar por tu URL
+                string serverUrl = "http://192.168.18.31:5000"; // Cambiar por tu URL
 
                 _loginService = new LoginService(serverUrl);
 

@@ -1,6 +1,7 @@
 ﻿using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace PBLauncher.Models
 {
@@ -182,6 +183,12 @@ namespace PBLauncher.Models
 
         [JsonProperty("message")]
         public string Message { get; set; }
+
+        [JsonPropertyName("RelativePath")]
+        public string RelativePath { get; set; }
+
+        [JsonPropertyName("relative_path")]
+        public string relative_path { set => RelativePath = value; }
     }
 
     // Información de hash de archivos
@@ -195,6 +202,9 @@ namespace PBLauncher.Models
 
         [JsonProperty("RelativePath")]
         public string RelativePath { get; set; }
+
+        [JsonPropertyName("relative_path")]
+        public string relative_path { set => RelativePath = value; }
     }
 
     // Mensajes/noticias del sistema

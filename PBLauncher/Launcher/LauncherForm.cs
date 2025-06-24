@@ -353,6 +353,15 @@ namespace PBLauncher
                 UpdateSocketIOStatus("Error de reconexión");
             }
         }
+
+        public async Task<bool> IsFileValid(string filename)
+        {
+            var response = await httpClient.GetAsync($"/api/file/{filename}/verify");
+            var fileInfo = JsonConvert.DeserializeObject<FileVerificationResponse>(response);
+
+            // Verificar solo archivos que realmente necesitan reparación
+            return VerifyLocalMD5(filename) == fileInfo.md5;
+        }
         private async Task<bool> VerifyServerResponse()
         {
             try

@@ -274,26 +274,82 @@ def update_info():
         updates = UpdatePackage.query.join(GameVersion).order_by(GameVersion.version).all()
         update_filenames = [f"update_{pkg.version.version}.zip" for pkg in updates]
 
-        # Obtener hashes de archivos de la versión más reciente
-        files = GameFile.query.filter_by(version_id=latest_version.id).all()
-        file_hashes = [file.to_dict() for file in files]
+        # ✅ CAMBIO CRÍTICO: Obtener archivos de reparación independientes
+        # ❌ ANTES (LÍNEA COMENTADA): 
+        # file_hashes = [{"filename": f.filename, "md5": f.md5_hash, "path": f.relative_path} for f in latest_version.files]
+        
+        # ✅ DESPUÉS: Obtener TODOS los archivos de reparación (independientes de versión)
+        repair_files = GameFile.query.all()
+        file_hashes = [
+            {
+                "filename": f.filename, 
+                "md5": f.md5_hash, 
+                "path": f.relative_path,
+                "size": f.file_size
+            } 
+            for f in repair_files
+        ]
 
-        log_download('update', 'update_check')
-
-        response_data = {
+        return jsonify({
             "latest_version": latest_version.version,
             "updates": update_filenames,
-            "file_hashes": file_hashes,
+            "file_hashes": file_hashes,  # ✅ Ahora incluye TODOS los archivos de reparación
             "maintenance_mode": False,
-            "auto_update_enabled": config.auto_update_enabled,
-            "force_ssl": config.force_ssl,
-            "update_check_interval": config.update_check_interval
-        }
-
-        return jsonify(response_data)
+            "auto_update_enabled": config.auto_update_enabled
+        }), 200
         
     except Exception as e:
         current_app.logger.error(f"Error in update_info: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/file/<filename>/verify')
+def verify_file(filename):
+    """Verificar MD5 de un archivo específico"""
+    try:
+        file = GameFile.query.filter_by(filename=filename).first()
+        
+        if not file:
+            return jsonify({"error": "Archivo no encontrado"}), 404
+        
+        return jsonify({
+            "filename": file.filename,
+            "md5": file.md5_hash,
+            "path": file.relative_path,
+            "size": file.file_size,
+            "download_url": f"/Launcher/files/{file.filename}"
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error verifying file {filename}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/repair_files')
+def repair_files():
+    """Endpoint específico para obtener archivos de reparación"""
+    try:
+        # Obtener todos los archivos de reparación
+        files = GameFile.query.all()
+        
+        file_list = []
+        for file in files:
+            file_data = {
+                "filename": file.filename,
+                "md5": file.md5_hash,
+                "path": file.relative_path,
+                "size": file.file_size,
+                "created_at": file.created_at.isoformat() if file.created_at else None,
+                "updated_at": file.updated_at.isoformat() if file.updated_at else None
+            }
+            file_list.append(file_data)
+        
+        return jsonify({
+            "success": True,
+            "total_files": len(file_list),
+            "files": file_list
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error in repair_files: {e}")
         return jsonify({"error": str(e)}), 500
 
 @api_bp.route('/message')

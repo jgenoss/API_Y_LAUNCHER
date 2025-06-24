@@ -13,24 +13,6 @@
                 <i class="bi bi-cloud-upload"></i> Subir Archivos
             </a>
         </div>
-        <div class="btn-group">
-            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
-                <i class="bi bi-funnel"></i> Filtros
-            </button>
-            <ul class="dropdown-menu">
-                <li><a class="dropdown-item" href="{{ url_for('admin.files') }}"
-                       :class="{ active: !currentVersionId }">Todos los archivos</a></li>
-                <li><hr class="dropdown-divider"></li>
-                <li v-for="version in versions" :key="version.id">
-                    <a class="dropdown-item" 
-                       :href="`{{ url_for('admin.files') }}?version_id=${version.id}`"
-                       :class="{ active: currentVersionId === version.id }">
-                        [[ version.version ]]
-                        <span v-if="version.is_latest" class="badge bg-success ms-1">Actual</span>
-                    </a>
-                </li>
-            </ul>
-        </div>
     </div>
 </div>
 
@@ -48,17 +30,6 @@
             <div class="card-body">
                 <h5 class="card-title text-success">[[ statistics.totalSizeFormatted ]]</h5>
                 <p class="card-text">Tamaño Total</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card text-center">
-            <div class="card-body">
-                <h5 class="card-title text-info">[[ statistics.filteredFiles ]]</h5>
-                <p class="card-text">
-                    <span v-if="currentVersionId">Archivos Filtrados</span>
-                    <span v-else>Versiones</span>
-                </p>
             </div>
         </div>
     </div>
@@ -111,13 +82,6 @@
 
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="card-title mb-0">
-            <i class="bi bi-list me-2"></i>
-            Lista de Archivos
-            <span v-if="currentVersionName" class="badge bg-primary ms-2">
-                Versión: [[ currentVersionName ]]
-            </span>
-        </h5>
         <div class="btn-group btn-group-sm">
             <button type="button" class="btn btn-outline-secondary" @click="selectAll">
                 <i class="bi bi-check-all"></i> Seleccionar Todo
@@ -280,8 +244,7 @@
             </div>
             <h5 class="text-muted">No hay archivos</h5>
             <p class="text-muted">
-                <span v-if="currentVersionId">No se han subido archivos para esta versión</span>
-                <span v-else>Sube tus primeros archivos del juego</span>
+                <span >Sube tus primeros archivos del juego</span>
             </p>
             <a href="{{ url_for('admin.upload_files') }}" class="btn btn-primary">
                 <i class="bi bi-cloud-upload me-2"></i>Subir Archivos
@@ -368,8 +331,7 @@
 {% block vue_script %}
 <script>
     window.FILES_DATA = {
-        versions: {{ versions_data | tojson | safe }},
-        currentVersionId: {{ current_version_id | tojson | safe }},
+        files: [],
         urls: {
             deleteFile: "{{ url_for('admin.delete_file', file_id=0) }}",
             deleteSelected: "{{ url_for('admin.delete_selected_files') }}",

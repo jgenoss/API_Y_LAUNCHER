@@ -370,22 +370,12 @@ def delete_version_api(version_id):
 @admin_bp.route('/files')
 @login_required
 def files():
-    """Gestión de archivos del juego"""
+    """Gestión de archivos del juego - TODOS los archivos para reparación"""
     try:
-        version_id = request.args.get('version_id', None, type=int)
-        versions = GameVersion.query.order_by(GameVersion.version.desc()).all()
-        versions_data = [v.to_dict() for v in versions]  # ← AGREGAR ESTA LÍNEA
-        
-        return render_template('admin/files.html',
-                               versions=versions,
-                               versions_data=versions_data,  # ← AGREGAR ESTA LÍNEA
-                               current_version_id=version_id)  # ← AGREGAR ESTA LÍNEA
+        return render_template('admin/files.html')
     except Exception as e:
         flash(f'Error: {str(e)}', 'error')
-        return render_template('admin/files.html', 
-                             versions=[], 
-                             versions_data=[], 
-                             current_version_id=None)
+        return render_template('admin/files.html')
 
 # --- NUEVA RUTA API para los datos de la tabla de archivos ---
 @admin_bp.route('/api/files_data', methods=['GET'])
@@ -395,12 +385,8 @@ def get_files_data():
     try:
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 50, type=int)
-        version_id = request.args.get('version_id', None, type=int)
-
-        query = GameFile.query
-        if version_id:
-            query = query.filter_by(version_id=version_id)
-
+        
+        query = GameFile.query.order_by(GameFile.created_at.desc())
         files_paginated = query.order_by(GameFile.created_at.desc()).paginate(
             page=page, per_page=per_page, error_out=False
         )

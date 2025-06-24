@@ -17,49 +17,6 @@
 <form @submit.prevent="submitFiles" id="uploadForm">
     <div class="row">
         <div class="col-lg-8">
-            <!-- Version Selection -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="bi bi-tag me-2"></i>Seleccionar Versión
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="row align-items-center">
-                        <div class="col-md-8">
-                            <select class="form-select" 
-                                    v-model="form.versionId" 
-                                    @change="loadVersionInfo"
-                                    :class="{ 'is-invalid': errors.version }"
-                                    required>
-                                <option value="">Selecciona una versión...</option>
-                                <option v-for="version in versions" 
-                                        :key="version.id" 
-                                        :value="version.id">
-                                    [[ version.version ]]
-                                    <span v-if="version.is_latest"> - Versión Actual</span>
-                                </option>
-                            </select>
-                            <div v-if="errors.version" class="invalid-feedback">
-                                [[ errors.version ]]
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <a href="{{ url_for('admin.create_version') }}" class="btn btn-outline-primary w-100">
-                                <i class="bi bi-plus-circle me-1"></i>Nueva Versión
-                            </a>
-                        </div>
-                    </div>
-                    
-                    <div v-if="versions.length === 0" class="alert alert-warning mt-3">
-                        <i class="bi bi-exclamation-triangle me-2"></i>
-                        No hay versiones disponibles. 
-                        <a href="{{ url_for('admin.create_version') }}" class="alert-link">Crea una versión</a> 
-                        antes de subir archivos.
-                    </div>
-                </div>
-            </div>
-
             <!-- File Upload Area -->
             <div class="card mb-4">
                 <div class="card-header">
@@ -100,7 +57,7 @@
                                ref="fileInput"
                                @change="handleFileSelect"
                                multiple 
-                               accept=".exe,.dll,.txt,.xml,.json,.png,.jpg,.gif"
+                               accept=".exe,.dll,.txt,.xml,.json,.png,.jpg,.gif,.dat,.key"
                                style="display: none;">
                     </div>
                     

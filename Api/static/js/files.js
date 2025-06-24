@@ -57,8 +57,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 files: [], // Inicialmente vacío, se llenará con la llamada API
 
                 // Datos del servidor (se obtienen del HTML inicial o API separada)
-                versions: window.FILES_DATA.versions || [], // Para el dropdown de filtro
-                currentVersionId: window.FILES_DATA.currentVersionId || null,
                 urls: window.FILES_DATA.urls || {},
 
                 // Filtros (se mantienen en el cliente)
@@ -221,7 +219,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 const totalSize = this.files.reduce((sum, file) => sum + (file.file_size || 0), 0);
                 const withMD5 = this.files.filter(file => file.md5_hash).length;
 
-                // Cuando el currentVersionId está seteado en el HTML, significa que la API ya devuelve archivos filtrados por esa versión.
                 // Entonces, 'totalFiles' es el total filtrado para esa versión, y 'filteredFiles' será el total de la paginación actual.
                 const totalFilesCount = this.pagination.total; // Total de archivos para el filtro de versión actual
                 const filesInCurrentPage = this.filteredFiles.length; // Archivos después de filtros locales (search, ext, size)
@@ -233,15 +230,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     withMD5: withMD5
                 };
             },
-
-            /**
-             * Nombre de la versión actual filtrada
-             */
-            currentVersionName() {
-                if (!this.currentVersionId) return null;
-                const version = this.versions.find(v => v.id === this.currentVersionId);
-                return version ? version.version : null;
-            }
         },
 
         mounted() {
@@ -283,7 +271,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     const params = {
                         page: this.filters.page,
                         per_page: this.filters.per_page,
-                        version_id: this.currentVersionId // Pasar el filtro de versión si existe
                         // Los filtros de búsqueda, extensión y tamaño se aplicarán client-side a 'files'
                         // una vez que los datos son recibidos. O se pueden pasar a la API si el backend los soporta.
                     };

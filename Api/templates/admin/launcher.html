@@ -1,0 +1,425 @@
+{% extends "base.html" %}
+
+{% block title %}Versiones del Launcher - Launcher Admin Panel{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <i class="bi bi-app me-2"></i>Versiones del Launcher
+    </h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <a href="{{ url_for('admin.upload_launcher') }}" class="btn btn-sm btn-primary">
+                <i class="bi bi-cloud-upload"></i> Subir Nueva Versión
+            </a>
+        </div>
+        <div class="btn-group">
+            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                <i class="bi bi-gear"></i> Acciones
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="/api/launcher_update" target="_blank">
+                    <i class="bi bi-code me-2"></i>Ver JSON del Launcher
+                </a></li>
+                <li><a class="dropdown-item" href="#" @click.prevent="testLauncherUpdate">
+                    <i class="bi bi-play-circle me-2"></i>Probar Actualización
+                </a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="#" @click.prevent="generateUpdateScript()">
+                    <i class="bi bi-file-code me-2"></i>Generar Script de Update
+                </a></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Launcher Statistics -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-primary">[[ stats.totalVersions ]]</h5>
+                <p class="card-text">Versiones Totales</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-success">
+                    [[ stats.currentVersion || 'N/A' ]]
+                </h5>
+                <p class="card-text">Versión Actual</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-info">
+                    [[ stats.totalSizeFormatted ]]
+                </h5>
+                <p class="card-text">Tamaño Total</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-warning">
+                    [[ stats.archivedVersions ]]
+                </h5>
+                <p class="card-text">Versiones Archivadas</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Current Launcher Info -->
+<div v-if="currentLauncher" class="card mb-4 border-success">
+    <div class="card-header bg-success text-white">
+        <h5 class="card-title mb-0">
+            <i class="bi bi-star me-2"></i>Launcher Actual en Producción
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-8">
+                <dl class="row mb-0">
+                    <dt class="col-sm-3">Versión:</dt>
+                    <dd class="col-sm-9">
+                        <span class="badge bg-success fs-6">[[ currentLauncher.version ]]</span>
+                    </dd>
+
+                    <dt class="col-sm-3">Archivo:</dt>
+                    <dd class="col-sm-9"><code>[[ currentLauncher.filename ]]</code></dd>
+
+                    <dt class="col-sm-3">Fecha:</dt>
+                    <dd class="col-sm-9">[[ formatDate(currentLauncher.created_at) ]]</dd>
+
+                    <dt class="col-sm-3">URL de descarga:</dt>
+                    <dd class="col-sm-9">
+                        <div class="input-group input-group-sm">
+                            <input type="text" class="form-control font-monospace" 
+                                   :value="getDownloadUrl(currentLauncher.filename)" readonly>
+                            <button class="btn btn-outline-secondary" type="button"
+                                    @click="copyToClipboard(getDownloadUrl(currentLauncher.filename))">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </div>
+                    </dd>
+                </dl>
+            </div>
+            <div class="col-md-4 text-end">
+                <a :href="'/Launcher/' + currentLauncher.filename" 
+                   class="btn btn-success mb-2" target="_blank">
+                    <i class="bi bi-download me-2"></i>Descargar
+                </a>
+                <br>
+                <button class="btn btn-outline-info btn-sm" 
+                        @click="testLauncherDownload(currentLauncher.filename)">
+                    <i class="bi bi-play-circle me-1"></i>Probar Descarga
+                </button>
+            </div>
+        </div>
+
+        <div v-if="currentLauncher.release_notes" class="mt-3">
+            <hr>
+            <h6 class="fw-bold">Notas de la Versión:</h6>
+            <div class="bg-light p-3 rounded" v-html="formatReleaseNotes(currentLauncher.release_notes)">
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Launchers Table -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">
+            <i class="bi bi-list me-2"></i>Historial de Versiones
+        </h5>
+        <div class="btn-group btn-group-sm">
+            <button type="button" 
+                    class="btn btn-outline-secondary" 
+                    @click="cleanupOldVersions">
+                <i class="bi bi-trash"></i> Limpiar Antiguas
+            </button>
+            <button type="button" 
+                    class="btn btn-outline-info" 
+                    @click="exportVersionHistory">
+                <i class="bi bi-download"></i> Exportar Historial
+            </button>
+        </div>
+    </div>
+
+    <div class="card-body p-0">
+        <div v-if="launchers.length > 0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">Versión</th>
+                            <th scope="col">Archivo</th>
+                            <th scope="col">Estado</th>
+                            <th scope="col">Tamaño</th>
+                            <th scope="col">Fecha de Subida</th>
+                            <th scope="col">Creado por</th>
+                            <th scope="col">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="launcher in launchers" 
+                            :key="launcher.id"
+                            :class="{ 'table-success': launcher.is_current }">
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="version-icon me-2">
+                                        <i v-if="launcher.is_current" class="bi bi-star-fill text-warning"></i>
+                                        <i v-else class="bi bi-app text-primary"></i>
+                                    </div>
+                                    <div>
+                                        <strong>[[ launcher.version ]]</strong>
+                                        <span v-if="launcher.is_current" class="badge bg-success ms-2">Actual</span>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-file-earmark-code me-2 text-info"></i>
+                                    <div>
+                                        <code class="small">[[ launcher.filename ]]</code>
+                                        <br>
+                                        <small class="text-muted">Ejecutable</small>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <span v-if="launcher.is_current" class="badge bg-success">
+                                    <i class="bi bi-broadcast me-1"></i>En Producción
+                                </span>
+                                <span v-else class="badge bg-secondary">
+                                    <i class="bi bi-archive me-1"></i>Archivada
+                                </span>
+                            </td>
+                            <td>
+                                <span v-if="launcher.file_size_formatted" class="badge bg-light text-dark">
+                                    [[ launcher.file_size_formatted ]]
+                                </span>
+                                <span v-else class="text-muted">-</span>
+                            </td>
+                            <td>
+                                <small class="text-muted">
+                                    [[ formatDate(launcher.created_at) ]]
+                                </small>
+                            </td>
+                            <td>
+                                <small class="text-muted">
+                                    <i class="bi bi-person me-1"></i>
+                                    [[ launcher.created_by ? 'Admin' : 'Sistema' ]]
+                                </small>
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <a v-if="!launcher.is_current"
+                                       :href="'/admin/launcher/' + launcher.id + '/set_current'" 
+                                       class="btn btn-outline-success" 
+                                       title="Establecer como actual"
+                                       @click="confirmSetCurrent($event, launcher)">
+                                        <i class="bi bi-arrow-up-circle"></i>
+                                    </a>
+
+                                    <button type="button" 
+                                            class="btn btn-outline-primary" 
+                                            @click="showLauncherDetails(launcher)"
+                                            title="Ver detalles">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+
+                                    <a :href="'/Launcher/' + launcher.filename" 
+                                       class="btn btn-outline-info" 
+                                       target="_blank"
+                                       title="Descargar">
+                                        <i class="bi bi-download"></i>
+                                    </a>
+
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <button type="button" 
+                                                class="btn btn-outline-secondary dropdown-toggle" 
+                                                data-bs-toggle="dropdown">
+                                            <i class="bi bi-three-dots"></i>
+                                        </button>
+                                        <ul class="dropdown-menu">
+                                            <li>
+                                                <a class="dropdown-item" href="#" 
+                                                   @click.prevent="testLauncherDownload(launcher.filename)">
+                                                    <i class="bi bi-play-circle me-2"></i>Probar Descarga
+                                                </a>
+                                            </li>
+                                            <li>
+                                                <a class="dropdown-item" href="#" 
+                                                   @click.prevent="generateUpdateScript(launcher.version)">
+                                                    <i class="bi bi-file-code me-2"></i>Generar Script
+                                                </a>
+                                            </li>
+                                            <li v-if="!launcher.is_current"><hr class="dropdown-divider"></li>
+                                            <li v-if="!launcher.is_current">
+                                                <a class="dropdown-item text-danger" href="#" 
+                                                   @click.prevent="deleteLauncher(launcher)">
+                                                    <i class="bi bi-trash me-2"></i>Eliminar
+                                                </a>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div v-else class="text-center py-5">
+            <div class="mb-3">
+                <i class="bi bi-app" style="font-size: 4rem; color: #dee2e6;"></i>
+            </div>
+            <h5 class="text-muted">No hay versiones del launcher</h5>
+            <p class="text-muted">Sube tu primera versión del launcher para comenzar</p>
+            <a href="{{ url_for('admin.upload_launcher') }}" class="btn btn-primary">
+                <i class="bi bi-cloud-upload me-2"></i>Subir Primera Versión
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Launcher Detail Modal -->
+<div class="modal fade" id="launcherDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-app me-2"></i>Launcher [[ selectedLauncher.version ]]
+                    <span v-if="selectedLauncher.is_current" class="badge bg-success ms-2">Actual</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" v-if="selectedLauncher">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="fw-bold">Información General</h6>
+                        <dl class="row">
+                            <dt class="col-sm-5">Versión:</dt>
+                            <dd class="col-sm-7">[[ selectedLauncher.version ]]</dd>
+
+                            <dt class="col-sm-5">Archivo:</dt>
+                            <dd class="col-sm-7"><code>[[ selectedLauncher.filename ]]</code></dd>
+
+                            <dt class="col-sm-5">Estado:</dt>
+                            <dd class="col-sm-7">
+                                <span v-if="selectedLauncher.is_current" class="badge bg-success">En Producción</span>
+                                <span v-else class="badge bg-secondary">Archivada</span>
+                            </dd>
+
+                            <dt class="col-sm-5">Tamaño:</dt>
+                            <dd class="col-sm-7">
+                                <span v-if="selectedLauncher.file_size_formatted">
+                                    [[ selectedLauncher.file_size_formatted ]]
+                                </span>
+                                <span v-else class="text-muted">No disponible</span>
+                            </dd>
+                        </dl>
+                    </div>
+
+                    <div class="col-md-6">
+                        <h6 class="fw-bold">Detalles de Subida</h6>
+                        <dl class="row">
+                            <dt class="col-sm-5">Fecha:</dt>
+                            <dd class="col-sm-7">[[ formatDate(selectedLauncher.created_at, true) ]]</dd>
+
+                            <dt class="col-sm-5">Subido por:</dt>
+                            <dd class="col-sm-7">
+                                <i v-if="selectedLauncher.created_by" class="bi bi-person me-1"></i>
+                                <i v-else class="bi bi-robot me-1"></i>
+                                [[ selectedLauncher.created_by ? 'Admin' : 'Sistema' ]]
+                            </dd>
+
+                            <dt class="col-sm-5">Ruta:</dt>
+                            <dd class="col-sm-7">
+                                <small class="text-muted">
+                                    [[ selectedLauncher.file_path || 'No disponible' ]]
+                                </small>
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+
+                <div v-if="selectedLauncher.release_notes" class="mt-3">
+                    <hr>
+                    <h6 class="fw-bold">Notas de la Versión</h6>
+                    <div class="bg-light p-3 rounded" v-html="formatReleaseNotes(selectedLauncher.release_notes)">
+                    </div>
+                </div>
+
+                <hr>
+                <h6 class="fw-bold">URLs de Descarga</h6>
+                <div class="mb-2">
+                    <label class="form-label small fw-bold">URL Directa:</label>
+                    <div class="input-group input-group-sm">
+                        <input type="text" 
+                               class="form-control font-monospace" 
+                               :value="getDownloadUrl(selectedLauncher.filename)" 
+                               readonly>
+                        <button class="btn btn-outline-secondary" 
+                                type="button"
+                                @click="copyToClipboard(getDownloadUrl(selectedLauncher.filename))">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label small fw-bold">API JSON:</label>
+                    <div class="input-group input-group-sm">
+                        <input type="text" 
+                               class="form-control font-monospace" 
+                               :value="getApiUrl()" 
+                               readonly>
+                        <button class="btn btn-outline-secondary" 
+                                type="button"
+                                @click="copyToClipboard(getApiUrl())">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <a v-if="!selectedLauncher.is_current"
+                   :href="'/admin/launcher/' + selectedLauncher.id + '/set_current'" 
+                   class="btn btn-success"
+                   @click="confirmSetCurrent($event, selectedLauncher)">
+                    <i class="bi bi-arrow-up-circle me-1"></i>Establecer como Actual
+                </a>
+                <a :href="'/Launcher/' + selectedLauncher.filename" 
+                   class="btn btn-outline-primary" 
+                   target="_blank">
+                    <i class="bi bi-download me-1"></i>Descargar
+                </a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block vue_script %}
+<script>
+    // Pasar datos del servidor a JavaScript
+    window.LAUNCHER_DATA = {
+        launchers: {{ launchers | tojson | safe }},
+        baseUrl: '{{ request.url_root }}'
+    };
+    
+    // Deshabilitar la instancia Vue por defecto
+    window.DISABLE_DEFAULT_VUE = true;
+</script>
+<script src="{{ url_for('static', filename='js/launcher.js') }}"></script>
+{% endblock %}

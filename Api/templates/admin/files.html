@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+
+{% block title %}Archivos del Juego - Launcher Admin Panel{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <i class="bi bi-file-earmark me-2"></i>Archivos del Juego
+    </h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <a href="{{ url_for('admin.upload_files') }}" class="btn btn-sm btn-primary">
+                <i class="bi bi-cloud-upload"></i> Subir Archivos
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-primary">[[ statistics.totalFiles ]]</h5>
+                <p class="card-text">Total de Archivos</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-success">[[ statistics.totalSizeFormatted ]]</h5>
+                <p class="card-text">Tamaño Total</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-warning">[[ statistics.withMD5 ]]</h5>
+                <p class="card-text">Con Hash MD5</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <i class="bi bi-search"></i>
+                    </span>
+                    <input type="text" 
+                           class="form-control" 
+                           placeholder="Buscar archivos por nombre, ruta o hash..."
+                           v-model="filters.search"
+                           @input="applyFilters">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" v-model="filters.extension" @change="applyFilters">
+                    <option value="">Todas las extensiones</option>
+                    <option value=".exe">Ejecutables (.exe)</option>
+                    <option value=".dll">Librerías (.dll)</option>
+                    <option value=".xml">Configuración (.xml)</option>
+                    <option value=".json">JSON (.json)</option>
+                    <option value=".txt">Texto (.txt)</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" v-model="filters.size" @change="applyFilters">
+                    <option value="">Todos los tamaños</option>
+                    <option value="small">Pequeños (&lt; 1 MB)</option>
+                    <option value="medium">Medianos (1-10 MB)</option>
+                    <option value="large">Grandes (&gt; 10 MB)</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="btn-group btn-group-sm">
+            <button type="button" class="btn btn-outline-secondary" @click="selectAll">
+                <i class="bi bi-check-all"></i> Seleccionar Todo
+            </button>
+            <button type="button" 
+                    class="btn btn-outline-danger" 
+                    @click="deleteSelectedFiles" 
+                    :disabled="selectedFiles.length === 0">
+                <i class="bi bi-trash"></i> 
+                <span v-if="selectedFiles.length > 0">
+                    Eliminar ([[ selectedFiles.length ]])
+                </span>
+                <span v-else>Eliminar Seleccionados</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="card-body p-0">
+        <div v-if="files.length > 0"> <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col" style="width: 50px;">
+                                <input type="checkbox" 
+                                       class="form-check-input" 
+                                       v-model="selectAllChecked"
+                                       @change="toggleSelectAll">
+                            </th>
+                            <th scope="col">Archivo</th>
+                            <th scope="col">Ruta Relativa</th>
+                            <th scope="col">Tamaño</th>
+                            <th scope="col">MD5 Hash</th>
+                            <th scope="col">Actualizado</th>
+                            <th scope="col">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="file in filteredFiles" :key="file.id">
+                            <td>
+                                <input type="checkbox" 
+                                       class="form-check-input" 
+                                       :value="file.id"
+                                       v-model="selectedFiles">
+                            </td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="file-icon me-2">
+                                        <i :class="getFileIcon(file.filename)"></i>
+                                    </div>
+                                    <div>
+                                        <strong>[[ file.filename ]]</strong>
+                                        <br>
+                                        <small class="text-muted">[[ getFileExtension(file.filename) ]]</small>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <code class="small">[[ file.relative_path ]]</code>
+                            </td>
+                            <td>
+                                <span v-if="file.file_size_formatted" class="badge bg-light text-dark">
+                                    [[ file.file_size_formatted ]]
+                                </span>
+                                <span v-else class="text-muted">-</span>
+                            </td>
+                            <td>
+                                <div v-if="file.md5_hash" class="hash-display">
+                                    <code class="small">[[ file.md5_hash.substring(0, 12) ]]...</code>
+                                    <button type="button" 
+                                            class="btn btn-link btn-sm p-0 ms-1" 
+                                            @click="copyToClipboard(file.md5_hash)"
+                                            title="Copiar hash completo">
+                                        <i class="bi bi-clipboard"></i>
+                                    </button>
+                                </div>
+                                <span v-else class="text-muted">No calculado</span>
+                            </td>
+                            <td>
+                                <small class="text-muted">
+                                    [[ formatDate(file.updated_at || file.created_at) ]]
+                                </small>
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <button type="button" 
+                                            class="btn btn-outline-primary" 
+                                            @click="showFileDetails(file)"
+                                            title="Ver detalles">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <button type="button" 
+                                            class="btn btn-outline-success"
+                                            @click="downloadFile(file.filename)"
+                                            title="Descargar">
+                                        <i class="bi bi-download"></i>
+                                    </button>
+                                    <button type="button" 
+                                            class="btn btn-outline-danger"
+                                            @click="deleteFile(file)"
+                                            title="Eliminar">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div v-if="totalPages > 1" class="card-footer">
+                <nav aria-label="File pagination">
+                    <ul class="pagination justify-content-center mb-0">
+                        <li class="page-item" :class="{ disabled: pagination.page === 1 }">
+                            <button class="page-link" @click="changePage(pagination.page - 1)" :disabled="currentPage === 1">
+                                <i class="bi bi-chevron-left"></i>
+                            </button>
+                        </li>
+
+                        <li v-for="page in visiblePages" :key="page" 
+                            class="page-item" 
+                            :class="{ active: page === currentPage }">
+                            <button v-if="page !== '...'" 
+                                    class="page-link" 
+                                    @click="changePage(page)">
+                                [[ page ]]
+                            </button>
+                            <span v-else class="page-link">...</span>
+                        </li>
+
+                        <li class="page-item" :class="{ disabled: currentPage === totalPages }">
+                            <button class="page-link" 
+                                    @click="changePage(currentPage + 1)" 
+                                    :disabled="currentPage === totalPages">
+                                <i class="bi bi-chevron-right"></i>
+                            </button>
+                        </li>
+                    </ul>
+                </nav>
+
+                <div class="text-center text-muted mt-2">
+                    <small>
+                        Mostrando [[ startIndex ]] - [[ endIndex ]] de [[ filteredFiles.length ]] archivos
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <div v-else class="text-center py-5">
+            <div class="mb-3">
+                <i class="bi bi-file-earmark" style="font-size: 4rem; color: #dee2e6;"></i>
+            </div>
+            <h5 class="text-muted">No hay archivos</h5>
+            <p class="text-muted">
+                <span >Sube tus primeros archivos del juego</span>
+            </p>
+            <a href="{{ url_for('admin.upload_files') }}" class="btn btn-primary">
+                <i class="bi bi-cloud-upload me-2"></i>Subir Archivos
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="fileDetailModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-file-earmark me-2"></i>[[ selectedFile.filename ]]
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" v-if="selectedFile">
+                <dl class="row">
+                    <dt class="col-sm-4">Nombre:</dt>
+                    <dd class="col-sm-8"><code>[[ selectedFile.filename ]]</code></dd>
+
+                    <dt class="col-sm-4">Ruta relativa:</dt>
+                    <dd class="col-sm-8"><code>[[ selectedFile.relative_path ]]</code></dd>
+
+                    <dt class="col-sm-4">Tamaño:</dt>
+                    <dd class="col-sm-8">
+                        <span v-if="selectedFile.file_size_formatted">
+                            [[ selectedFile.file_size_formatted ]]
+                            <small class="text-muted">([[ selectedFile.file_size.toLocaleString() ]] bytes)</small>
+                        </span>
+                        <span v-else class="text-muted">No calculado</span>
+                    </dd>
+
+                    <dt class="col-sm-4">MD5 Hash:</dt>
+                    <dd class="col-sm-8">
+                        <div v-if="selectedFile.md5_hash" class="input-group input-group-sm">
+                            <input type="text" 
+                                   class="form-control font-monospace" 
+                                   :value="selectedFile.md5_hash" 
+                                   readonly>
+                            <button class="btn btn-outline-secondary" 
+                                    type="button"
+                                    @click="copyToClipboard(selectedFile.md5_hash)">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </div>
+                        <span v-else class="text-muted">No calculado</span>
+                    </dd>
+
+                    <dt class="col-sm-4">Creado:</dt>
+                    <dd class="col-sm-8">[[ formatDate(selectedFile.created_at) ]]</dd>
+
+                    <dt class="col-sm-4">Actualizado:</dt>
+                    <dd class="col-sm-8">
+                        [[ selectedFile.updated_at ? formatDate(selectedFile.updated_at) : 'Nunca' ]]
+                    </dd>
+                </dl>
+            </div>
+            <div class="modal-footer">
+                <button type="button" 
+                        class="btn btn-success"
+                        @click="downloadFile(selectedFile.filename)">
+                    <i class="bi bi-download me-1"></i>Descargar
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block vue_script %}
+<script>
+    window.FILES_DATA = {
+        files: [],
+        urls: {
+            deleteFile: "{{ url_for('admin.delete_file', file_id=0) }}",
+            deleteSelected: "{{ url_for('admin.delete_selected_files') }}",
+            downloadBase: "/api/files/"
+        }
+    };
+    window.DISABLE_DEFAULT_VUE = true;
+</script>
+<script src="{{ url_for('static', filename='js/files.js') }}"></script>
+{% endblock %}

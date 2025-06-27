@@ -71,6 +71,9 @@ namespace PBLauncher
         public byte[] Header_sl;
         private LoginService _loginService;
 
+        private bool isCheckingLauncherUpdate = false;
+        private readonly object launcherUpdateLock = new object();
+        private DateTime lastLauncherUpdateCheck = DateTime.MinValue;
         public class Config
         {
             public string InstalledVersion { get; set; }
@@ -594,7 +597,7 @@ namespace PBLauncher
                 var client = new WebClient();
                 string updaterPath = Path.Combine(Application.StartupPath, "LauncherUpdater.exe");
                 
-                await client.DownloadFileTaskAsync($"{Urls}LauncherUpdater.exe", updaterPath);
+                await client.DownloadFileTaskAsync($"{Urls}/LauncherUpdater.exe", updaterPath);
                 
                 Process.Start(updaterPath, $"\"{Urls}\" \"{Application.ExecutablePath}\" \"{launcherInfo.FileName}\"");
                 Application.Exit();
@@ -1242,6 +1245,26 @@ namespace PBLauncher
 
         private async Task CheckLauncherUpdate()
         {
+            // 🔒 PROTECCIÓN CONTRA MÚLTIPLES EJECUCIONES
+            lock (launcherUpdateLock)
+            {
+                if (isCheckingLauncherUpdate)
+                {
+                    LogMessage("⚠️ Verificación de launcher ya en progreso, saltando...");
+                    return;
+                }
+
+                // Evitar verificaciones muy frecuentes (cada 5 minutos mínimo)
+                if ((DateTime.Now - lastLauncherUpdateCheck).TotalMinutes < 5)
+                {
+                    LogMessage("⚠️ Verificación muy reciente, saltando...");
+                    return;
+                }
+
+                isCheckingLauncherUpdate = true;
+                lastLauncherUpdateCheck = DateTime.Now;
+            }
+
             try
             {
                 if (!systemConfig.AutoUpdateEnabled)
@@ -1252,7 +1275,6 @@ namespace PBLauncher
 
                 LogMessage("Verificando actualización del launcher...");
 
-                var client = new WebClient();
                 var json = await axios.Get<LauncherVersionInfo>($"/launcher_update");
                 var info = json.Data;
 
@@ -1272,28 +1294,23 @@ namespace PBLauncher
                 {
                     LogMessage($"Nueva versión del launcher disponible: {info.Version}");
 
+                    // 🔒 VERIFICAR QUE NO HAY OTRO DIÁLOGO ABIERTO
+                    if (Application.OpenForms.OfType<Form>().Any(f => f.Text.Contains("Actualización")))
+                    {
+                        LogMessage("⚠️ Ya hay un diálogo de actualización abierto");
+                        return;
+                    }
+
                     string updaterPath = Path.Combine(Application.StartupPath, "LauncherUpdater.exe");
+
+                    var client = new WebClient();
                     await client.DownloadFileTaskAsync($"{Urls}LauncherUpdater.exe", updaterPath);
 
-                    var result = MessageBox.Show(
-                        $"Hay una actualización disponible para el launcher.\n\nVersión actual: {Application.ProductVersion}\nNueva versión: {info.Version}\n\n¿Desea actualizar ahora?",
-                        "Actualización Disponible",
-                        MessageBoxButtons.YesNo,
-                        MessageBoxIcon.Question
-                    );
-
-                    if (result == DialogResult.Yes)
-                    {
-                        Process.Start(updaterPath, $"\"{Urls}\" \"{Application.ExecutablePath}\" \"{info.FileName}\"");
-                        Application.Exit();
-                    }
-                    else
-                    {
-                        if (File.Exists(updaterPath))
-                        {
-                            File.Delete(updaterPath);
-                        }
-                    }
+                    // 🔒 INVOCAR EN HILO PRINCIPAL Y ESPERAR RESULTADO
+                    string versionedFileName = $"PBLauncher_v{info.Version}.exe";
+                    LogMessage($"Iniciando actualización con archivo: {versionedFileName}");
+                    Process.Start(updaterPath, $"\"{Urls}\" \"{Application.ExecutablePath}\" \"{versionedFileName}\"");
+                    Application.Exit();
                 }
                 else
                 {
@@ -1304,11 +1321,19 @@ namespace PBLauncher
             {
                 LogMessage($"Error al verificar actualización del launcher: {ex.Message}");
 
-                // No mostrar error si es solo problema de conectividad
                 if (!ex.Message.Contains("mantenimiento"))
                 {
                     MessageBox.Show($"No se pudo verificar actualizaciones del launcher: {ex.Message}", "Advertencia", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
+            }
+            finally
+            {
+                // 🔒 LIBERAR FLAG
+                lock (launcherUpdateLock)
+                {
+                    isCheckingLauncherUpdate = false;
+                }
+                LogMessage("Verificación de launcher completada");
             }
         }
 
@@ -3077,51 +3102,36 @@ namespace PBLauncher
             return true;
         }
 
-        private async Task<Process> StartGameProcess()
+        private Task<Process> StartGameProcess()
         {
-            try
+            return Task.Run(() =>
             {
-                string gameExePath = Path.Combine(Application.StartupPath, "PointBlank.exe");
-                var processStartInfo = new ProcessStartInfo
+                try
                 {
-                    FileName = gameExePath,
-                    Arguments = $"{textBox_user.Text.ToLower()} {((userData.IpAddress == "127.0.0.1") ? textBox_pass.Text.ToLower() : userData.Token)}",
-                    UseShellExecute = false,
-                    CreateNoWindow = false,
-                    WorkingDirectory = Application.StartupPath,
-                    ErrorDialog = true
-                };
-                UpdateStatus("Lanzando PointBlank.exe...");
-                var process = Process.Start(processStartInfo);
-
-                if (process != null)
-                {
-                    // Esperar un poco para verificar que el proceso se inició correctamente
-                    await Task.Delay(2000);
-
-                    if (process.HasExited)
+                    string gameExePath = Path.Combine(Application.StartupPath, "PointBlank.exe");
+                    var processStartInfo = new ProcessStartInfo
                     {
-                        throw new InvalidOperationException($"El juego se cerró inmediatamente. Código de salida: {process.ExitCode}");
-                    }
+                        FileName = gameExePath,
+                        Arguments = $"{textBox_user.Text.ToLower()} {((userData.IpAddress == "127.0.0.1") ? textBox_pass.Text.ToLower() : userData.Token)}",
+                        UseShellExecute = false,
+                        CreateNoWindow = false,
+                        WorkingDirectory = Application.StartupPath,
+                        ErrorDialog = true
+                    };
 
-                    if (systemConfig?.proxyEnabled == true)
-                    {
-                        this.Hide();
-                    }
-                    Console.WriteLine($"✅ Juego iniciado exitosamente. PID: {process.Id}");
-                    return process;
+                    UpdateStatus("Lanzando PointBlank.exe...");
+                    var process = Process.Start(processStartInfo);
+                    return process; // Ensure a Process object is returned
                 }
-                else
+                catch (Exception ex)
                 {
-                    throw new InvalidOperationException("No se pudo iniciar el proceso del juego");
+                    LogMessage($"❌ Error iniciando juego: {ex.Message}");
+                    throw; // Re-throw the exception to handle it in the calling code
                 }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Error iniciando juego: {ex.Message}");
-                throw;
-            }
+            });
         }
+
+
 
         /// <summary>
         /// Configurar servicios adicionales (proxy, detección, etc.)

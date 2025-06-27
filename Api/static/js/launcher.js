@@ -290,12 +290,17 @@ document.addEventListener('DOMContentLoaded', function () {
             generateUpdateScript(version = null) {
                 const currentVersion = version || 'latest';
 
+                // Construir el nombre del archivo versionado correctamente
+                const versionedFileName = currentVersion === 'latest'
+                    ? 'PBLauncher_latest.exe'
+                    : `PBLauncher_v${currentVersion}.exe`;
+
                 const script = `@echo off
                     echo Actualizando Launcher...
                     curl -L -o LauncherUpdater.exe "${this.baseUrl}Launcher/LauncherUpdater.exe"
                     if exist LauncherUpdater.exe (
                         echo Iniciando actualizador...
-                        LauncherUpdater.exe "${this.baseUrl}Launcher/" "Launcher.exe" "${currentVersion}"
+                        LauncherUpdater.exe "${this.baseUrl.replace('/Launcher/', '/api')}" "%~dp0PBLauncher.exe" "${versionedFileName}"
                     ) else (
                         echo Error: No se pudo descargar el actualizador
                         pause
@@ -307,7 +312,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     `update_launcher_${currentVersion}.bat`,
                     'text/plain'
                 );
-
                 this.showSuccess(
                     'Script generado',
                     `Script de actualización generado: update_launcher_${currentVersion}.bat`

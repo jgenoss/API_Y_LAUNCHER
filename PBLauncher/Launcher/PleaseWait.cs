@@ -6,9 +6,13 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
+using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Linq;
+using System.Net;
 using System.Runtime.CompilerServices;
+using System.Security.Policy;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -22,6 +26,10 @@ namespace PBLauncher
         private string apiBaseUrl = "http://192.168.18.31:5000/api";
         private int maxRetries = 3;
         private int currentRetry = 0;
+
+        private bool isCheckingLauncherUpdate = false;
+        private readonly object launcherUpdateLock = new object();
+        private DateTime lastLauncherUpdateCheck = DateTime.MinValue;
 
         public PleaseWait()
         {
@@ -38,10 +46,91 @@ namespace PBLauncher
                 label.Text = text;
             }
         }
+        private async Task CheckLauncherUpdate()
+        {
+            // 🔒 PROTECCIÓN CONTRA MÚLTIPLES EJECUCIONES
+            lock (launcherUpdateLock)
+            {
+                if (isCheckingLauncherUpdate)
+                {
+                    LogMessage("⚠️ Verificación de launcher ya en progreso, saltando...");
+                    return;
+                }
+
+                // Evitar verificaciones muy frecuentes (cada 5 minutos mínimo)
+                if ((DateTime.Now - lastLauncherUpdateCheck).TotalMinutes < 5)
+                {
+                    LogMessage("⚠️ Verificación muy reciente, saltando...");
+                    return;
+                }
+
+                isCheckingLauncherUpdate = true;
+                lastLauncherUpdateCheck = DateTime.Now;
+            }
+
+            try
+            {
+
+                LogMessage("Verificando actualización del launcher...");
+                axios = new Axios(apiBaseUrl);
+                var json = await axios.Get<LauncherVersionInfo>($"/launcher_update");
+                var info = json.Data;
+
+                if (Version.Parse(info.Version) > Version.Parse(Application.ProductVersion))
+                {
+                    LogMessage($"Nueva versión del launcher disponible: {info.Version}");
+
+                    // 🔒 VERIFICAR QUE NO HAY OTRO DIÁLOGO ABIERTO
+                    if (Application.OpenForms.OfType<Form>().Any(f => f.Text.Contains("Actualización")))
+                    {
+                        LogMessage("⚠️ Ya hay un diálogo de actualización abierto");
+                        return;
+                    }
+
+                    string updaterPath = Path.Combine(Application.StartupPath, "LauncherUpdater.exe");
+
+                    var client = new WebClient();
+                    await client.DownloadFileTaskAsync($"{apiBaseUrl}/LauncherUpdater.exe", updaterPath);
+
+                    string versionedFileName = $"PBLauncher_v{info.Version}.exe";
+                    LogMessage($"Iniciando actualización con archivo: {versionedFileName}");
+                    Process.Start(updaterPath, $"\"{apiBaseUrl}\" \"{Application.ExecutablePath}\" \"{versionedFileName}\"");
+                    Application.Exit();
+                }
+                else
+                {
+                    LogMessage("Launcher está actualizado");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"Error al verificar actualización del launcher: {ex.Message}");
+
+                if (!ex.Message.Contains("mantenimiento"))
+                {
+                    MessageBox.Show($"No se pudo verificar actualizaciones del launcher: {ex.Message}", "Advertencia", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+            finally
+            {
+                // 🔒 LIBERAR FLAG
+                lock (launcherUpdateLock)
+                {
+                    isCheckingLauncherUpdate = false;
+                }
+                LogMessage("Verificación de launcher completada");
+            }
+        }
         private async void PleaseWait_Load(object sender, EventArgs e)
         {
             try
             {
+                if (File.Exists("./launcher.log"))
+                {
+                    File.Delete("./launcher.log");
+                }
+
+                await CheckLauncherUpdate();
                 // Realizar detección completa
                 var result = await HttpDebuggerDetector.DetectHttpDebuggersAsync();
 
@@ -65,6 +154,7 @@ namespace PBLauncher
 
                 SafeUpdateLabel(lb_loading, "Verificando sistema...");
                 await CheckSystemStatus();
+
             }
             catch (Exception ex)
             {
@@ -79,7 +169,7 @@ namespace PBLauncher
                 SafeUpdateLabel(lb_loading, "Verificando estado del servidor...");
 
                 // Obtener estado del sistema
-                var systemStatus = await statusService.GetSystemStatusAsync(true);
+                SystemStatus systemStatus = await statusService.GetSystemStatusAsync(true);
 
                 // Verificar si el sistema está en mantenimiento
                 if (systemStatus.MaintenanceMode)

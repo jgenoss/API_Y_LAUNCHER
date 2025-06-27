@@ -345,7 +345,7 @@ public static class HttpDebuggerDetector
             DetectDebuggerCertificates(result);
 
             // 4. Detectar puertos sospechosos
-            await DetectSuspiciousPorts(result);
+           // await DetectSuspiciousPorts(result);
 
             if (enableAdvancedDetection)
             {

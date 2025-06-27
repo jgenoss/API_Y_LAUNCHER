@@ -886,10 +886,119 @@ def launcher_versions():
 
 # En admin_routes.py, REEMPLAZAR la función upload_launcher() con esta implementación completa:
 
+# AÑADIR este endpoint en admin_routes.py
+
+@admin_bp.route('/api/launcher/check-version/<version>', methods=['GET'])
+@login_required
+def check_launcher_version(version):
+    """Verificar si una versión del launcher ya existe"""
+    try:
+        existing_launcher = LauncherVersion.query.filter_by(version=version).first()
+        
+        if existing_launcher:
+            return jsonify({
+                'exists': True,
+                'version': existing_launcher.version,
+                'is_current': existing_launcher.is_current,
+                'filename': existing_launcher.filename,
+                'created_at': existing_launcher.created_at.isoformat() if existing_launcher.created_at else None,
+                'created_by': existing_launcher.created_by,
+                'file_size': os.path.getsize(existing_launcher.file_path) if os.path.exists(existing_launcher.file_path) else 0
+            })
+        else:
+            return jsonify({
+                'exists': False,
+                'version': version
+            })
+            
+    except Exception as e:
+        current_app.logger.error(f'Error verificando versión {version}: {e}')
+        return jsonify({
+            'error': 'Error al verificar versión',
+            'details': str(e)
+        }), 500
+
+
+@admin_bp.route('/api/launcher/current', methods=['GET'])
+@login_required
+def get_current_launcher():
+    """Obtener información de la versión actual del launcher"""
+    try:
+        current_launcher = LauncherVersion.query.filter_by(is_current=True).first()
+        
+        if current_launcher:
+            return jsonify({
+                'found': True,
+                'version': current_launcher.version,
+                'filename': current_launcher.filename,
+                'file_path': current_launcher.file_path,
+                'release_notes': current_launcher.release_notes,
+                'created_at': current_launcher.created_at.isoformat() if current_launcher.created_at else None,
+                'created_by': current_launcher.created_by,
+                'file_exists': os.path.exists(current_launcher.file_path),
+                'file_size': os.path.getsize(current_launcher.file_path) if os.path.exists(current_launcher.file_path) else 0
+            })
+        else:
+            return jsonify({
+                'found': False,
+                'message': 'No hay versión actual configurada'
+            })
+            
+    except Exception as e:
+        current_app.logger.error(f'Error obteniendo versión actual: {e}')
+        return jsonify({
+            'error': 'Error al obtener versión actual',
+            'details': str(e)
+        }), 500
+
+
+@admin_bp.route('/api/launcher/versions/summary', methods=['GET'])
+@login_required 
+def get_launcher_versions_summary():
+    """Obtener resumen de todas las versiones del launcher"""
+    try:
+        launchers = LauncherVersion.query.order_by(LauncherVersion.created_at.desc()).all()
+        
+        summary = {
+            'total_versions': len(launchers),
+            'current_version': None,
+            'latest_version': None,
+            'versions': []
+        }
+        
+        for launcher in launchers:
+            version_info = {
+                'id': launcher.id,
+                'version': launcher.version,
+                'is_current': launcher.is_current,
+                'filename': launcher.filename,
+                'created_at': launcher.created_at.isoformat() if launcher.created_at else None,
+                'file_exists': os.path.exists(launcher.file_path),
+                'file_size': os.path.getsize(launcher.file_path) if os.path.exists(launcher.file_path) else 0
+            }
+            
+            summary['versions'].append(version_info)
+            
+            if launcher.is_current:
+                summary['current_version'] = version_info
+            
+            if not summary['latest_version']:
+                summary['latest_version'] = version_info
+        
+        return jsonify(summary)
+        
+    except Exception as e:
+        current_app.logger.error(f'Error obteniendo resumen de versiones: {e}')
+        return jsonify({
+            'error': 'Error al obtener resumen',
+            'details': str(e)
+        }), 500
+
+
 @admin_bp.route('/launcher/upload', methods=['GET', 'POST'])
 @login_required
 def upload_launcher():
-    """Subir nueva versión del launcher con opciones avanzadas"""
+    """Subir nueva versión del launcher con gestión correcta de versiones"""
     if request.method == 'POST':
         try:
             # Obtener datos del formulario
@@ -904,7 +1013,7 @@ def upload_launcher():
             update_json = 'update_json' in request.form
             notify_clients = 'notify_clients' in request.form
             
-            current_app.logger.info(f"Upload launcher - Version: {version}, Options: replace={replace_existing}, backup={create_backup}, json={update_json}, notify={notify_clients}")
+            current_app.logger.info(f"Upload launcher - Version: {version}, is_current: {is_current}")
             
             # Validaciones básicas
             if not version or not launcher_file or not launcher_file.filename:
@@ -928,95 +1037,165 @@ def upload_launcher():
             
             # 1. CREAR BACKUP DE VERSIÓN ACTUAL (si está habilitado)
             backup_path = None
-            if create_backup:
+            if create_backup and is_current:
                 backup_path = create_launcher_backup()
                 if backup_path:
                     current_app.logger.info(f"Backup creado en: {backup_path}")
                     flash(f'Backup creado: {os.path.basename(backup_path)}', 'info')
-                else:
-                    current_app.logger.warning("No se pudo crear backup")
             
-            # 2. PREPARAR ARCHIVO
-            filename = 'PBLauncher.exe'  # Nombre final estándar
+            # 2. SI LA NUEVA VERSIÓN SERÁ CURRENT, DESACTIVAR TODAS LAS DEMÁS
+            if is_current:
+                # Obtener la versión actual antes de cambiarla
+                current_launcher = LauncherVersion.query.filter_by(is_current=True).first()
+                
+                # Desactivar TODAS las versiones actuales
+                LauncherVersion.query.filter_by(is_current=True).update({
+                    'is_current': False
+                })
+                
+                current_app.logger.info("Todas las versiones anteriores marcadas como no actuales")
+                
+                if current_launcher:
+                    current_app.logger.info(f"Versión anterior {current_launcher.version} desactivada")
+            
+            # 3. PREPARAR ARCHIVO CON NOMBRE ÚNICO PARA EVITAR CONFLICTOS
+            # En lugar de siempre usar 'PBLauncher.exe', usar nombre con versión
+            original_filename = launcher_file.filename
+            filename = f'PBLauncher_v{version}.exe'  # Nombre único por versión
             file_path = os.path.join('static/downloads', filename)
             
             # Crear directorio si no existe
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
-            # Guardar archivo
+            # 4. SI ES REEMPLAZO, ELIMINAR ARCHIVO ANTERIOR
+            if existing_launcher:
+                try:
+                    if os.path.exists(existing_launcher.file_path):
+                        os.remove(existing_launcher.file_path)
+                        current_app.logger.info(f"Archivo anterior eliminado: {existing_launcher.file_path}")
+                except Exception as e:
+                    current_app.logger.warning(f"No se pudo eliminar archivo anterior: {e}")
+            
+            # 5. GUARDAR NUEVO ARCHIVO
             launcher_file.save(file_path)
             current_app.logger.info(f"Archivo guardado en: {file_path}")
             
-            # 3. PROCESAR VERSIÓN EXISTENTE O CREAR NUEVA
-            if existing_launcher and replace_existing:
-                # Actualizar versión existente
-                old_file_path = existing_launcher.file_path
+            # 6. CALCULAR MD5 PARA INTEGRIDAD
+            md5_hash = calculate_md5(file_path)
+            file_size = os.path.getsize(file_path)
+            
+            # 7. ACTUALIZAR O CREAR REGISTRO EN BASE DE DATOS
+            if existing_launcher:
+                # Actualizar registro existente
                 existing_launcher.filename = filename
                 existing_launcher.file_path = file_path
+                existing_launcher.is_current = is_current
                 existing_launcher.release_notes = release_notes
                 existing_launcher.created_at = datetime.utcnow()
                 existing_launcher.created_by = current_user.id
                 
-                if is_current:
-                    existing_launcher.set_as_current()
-                
-                # Eliminar archivo anterior si es diferente
-                if old_file_path and old_file_path != file_path and os.path.exists(old_file_path):
-                    try:
-                        os.remove(old_file_path)
-                        current_app.logger.info(f"Archivo anterior eliminado: {old_file_path}")
-                    except Exception as e:
-                        current_app.logger.warning(f"No se pudo eliminar archivo anterior: {e}")
-                
-                action_message = f'Versión {version} actualizada exitosamente'
+                current_app.logger.info(f"Versión {version} actualizada (reemplazo)")
+                flash(f'Versión {version} actualizada exitosamente', 'success')
                 
             else:
-                # Crear nueva versión
-                launcher_version = LauncherVersion(
+                # Crear nuevo registro
+                new_launcher = LauncherVersion(
                     version=version,
                     filename=filename,
                     file_path=file_path,
+                    is_current=is_current,
                     release_notes=release_notes,
                     created_by=current_user.id
                 )
                 
-                db.session.add(launcher_version)
-                db.session.flush()  # Para obtener el ID
-                
-                if is_current:
-                    launcher_version.set_as_current()
-                
-                action_message = f'Versión {version} creada exitosamente'
+                db.session.add(new_launcher)
+                current_app.logger.info(f"Nueva versión {version} creada")
+                flash(f'Versión {version} subida exitosamente', 'success')
             
-            # 5. NOTIFICAR A CLIENTES (si está habilitado)
-            if notify_clients:
-                notification_sent = send_launcher_notification(version, is_current)
-                if notification_sent:
-                    current_app.logger.info(f"Notificación enviada para versión {version}")
-                    flash('Notificación enviada a clientes', 'success')
-                else:
-                    current_app.logger.warning("No se pudo enviar notificación")
-                    flash('Error enviando notificación', 'warning')
+            # # 8. CREAR SYMLINK PARA COMPATIBILIDAD (solo si es current)
+            # if is_current:
+            #     symlink_path = os.path.join('static/downloads', 'PBLauncher.exe')
+            #     try:
+            #         # Eliminar symlink anterior si existe
+            #         if os.path.exists(symlink_path) or os.path.islink(symlink_path):
+            #             os.remove(symlink_path)
+                    
+            #         # Crear nuevo symlink o copia
+            #         if os.name == 'nt':  # Windows
+            #             import shutil
+            #             shutil.copy2(file_path, symlink_path)
+            #         else:  # Unix/Linux
+            #             os.symlink(os.path.abspath(file_path), symlink_path)
+                    
+            #         current_app.logger.info(f"Symlink creado: {symlink_path} -> {file_path}")
+                    
+            #     except Exception as e:
+            #         current_app.logger.warning(f"No se pudo crear symlink: {e}")
             
-            # Confirmar cambios en base de datos
+            # 9. COMMIT ÚNICO DE LA TRANSACCIÓN
             db.session.commit()
+            current_app.logger.info("Transacción completada exitosamente")
             
-            flash(action_message, 'success')
+            # 10. ACCIONES POST-COMMIT (fuera de la transacción)
             
-            # Emitir evento SocketIO si está disponible
-            try:
-                notify_launcher_uploaded(version, is_current)
-            except Exception as e:
-                current_app.logger.warning(f"Error enviando notificación SocketIO: {e}")
+            # Actualizar JSON de información si está habilitado
+            if update_json:
+                try:
+                    update_launcher_info_json()
+                    current_app.logger.info("JSON de información actualizado")
+                except Exception as e:
+                    current_app.logger.error(f"Error actualizando JSON: {e}")
+            
+            # Enviar notificaciones si está habilitado
+            if notify_clients:
+                try:
+                    send_launcher_notification(version, is_current)
+                    current_app.logger.info("Notificación enviada a clientes")
+                except Exception as e:
+                    current_app.logger.error(f"Error enviando notificación: {e}")
+            
+            # Log de auditoría
+            current_app.logger.info(
+                f'Launcher v{version} procesado por usuario {current_user.username} '
+                f'(current: {is_current}, backup: {create_backup}, replace: {replace_existing})'
+            )
             
             return redirect(url_for('admin.launcher_versions'))
             
         except Exception as e:
             db.session.rollback()
-            current_app.logger.error(f'Error uploading launcher: {str(e)}', exc_info=True)
+            current_app.logger.error(f'Error subiendo launcher: {e}')
             flash(f'Error al subir launcher: {str(e)}', 'error')
+            return render_template('admin/upload_launcher.html')
     
+    # GET request - mostrar formulario
     return render_template('admin/upload_launcher.html')
+
+def update_launcher_info_json():
+    """Actualizar archivo JSON con información de la versión actual"""
+    try:
+        current_launcher = LauncherVersion.query.filter_by(is_current=True).first()
+        if not current_launcher:
+            return
+        
+        info = {
+            "version": current_launcher.version,
+            "filename": "PBLauncher.exe",  # Nombre estándar para descarga
+            "download_url": f"/static/downloads/PBLauncher.exe",
+            "release_notes": current_launcher.release_notes or "",
+            "created_at": current_launcher.created_at.isoformat() if current_launcher.created_at else None,
+            "file_size": os.path.getsize(current_launcher.file_path) if os.path.exists(current_launcher.file_path) else 0
+        }
+        
+        json_path = os.path.join('static', 'launcher_info.json')
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(info, f, indent=2, ensure_ascii=False)
+        
+        current_app.logger.info(f"JSON actualizado: {json_path}")
+        
+    except Exception as e:
+        current_app.logger.error(f"Error actualizando JSON: {e}")
+        raise
 
 @admin_bp.route('/launcher/<int:launcher_id>/delete', methods=['POST'])
 @login_required

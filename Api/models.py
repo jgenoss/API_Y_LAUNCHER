@@ -206,14 +206,23 @@ class LauncherVersion(db.Model):
         return LauncherVersion.query.filter_by(is_current=True).first()
 
     def set_as_current(self):
-        # Desmarcar la versión actual
-        current = LauncherVersion.get_current()
-        if current:
-            current.is_current = False
-        
-        # Marcar esta versión como actual
-        self.is_current = True
-        db.session.commit()
+        """Establecer esta versión como actual de forma segura"""
+        try:
+            # PASO 1: Primero desactivar TODAS las versiones (incluyendo la actual)
+            LauncherVersion.query.update({'is_current': False})
+            
+            # PASO 2: Luego activar solo esta versión
+            self.is_current = True
+            
+            # PASO 3: Commit de los cambios
+            db.session.commit()
+            
+            current_app.logger.info(f"Versión {self.version} establecida como actual exitosamente")
+            
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error estableciendo versión actual: {e}")
+            raise
     
     def to_dict(self):
         return {

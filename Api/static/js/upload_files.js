@@ -1,564 +1,946 @@
 /**
- * upload_files.js - Lógica Vue.js para subir archivos del juego
+ * upload_launcher.js - Lógica Vue.js para subir nueva versión del launcher
  * Separado completamente del template HTML
+ * Con validaciones mejoradas y control de versiones
  */
 
-document.addEventListener('DOMContentLoaded', function () {
-    console.log('🚀 DOMContentLoaded - Iniciando Upload Files Vue.js');
-
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 DOMContentLoaded - Iniciando Upload Launcher Vue.js');
+    
     // Verificaciones de dependencias
     if (typeof Vue === 'undefined') {
         console.error('❌ Vue.js no está disponible');
         return;
     }
-
+    
     const appElement = document.getElementById('app');
     if (!appElement) {
         console.error('❌ Elemento #app no encontrado en el DOM');
         return;
     }
-
+    
     if (typeof NotificationMixin === 'undefined') {
         console.error('❌ Mixins no están disponibles');
         return;
     }
-
-    // Verificar datos del servidor
-    if (typeof window.UPLOAD_FILES_DATA === 'undefined') {
-        console.error('❌ UPLOAD_FILES_DATA no está disponible');
-        window.UPLOAD_FILES_DATA = {
-            versions: [],
-            versionsData: [],
-            urls: { submit: '/admin/files/upload' }
-        };
-    }
-
+    
     console.log('✅ Todas las dependencias disponibles');
-    console.log('📁 Datos de upload files:', window.UPLOAD_FILES_DATA);
-
+    
     // Configurar delimitadores de Vue
     Vue.config.delimiters = ['[[', ']]'];
-
-    // Crear instancia Vue para Upload Files
-    const uploadFilesApp = new Vue({
+    
+    // Configuración del launcher
+    const LAUNCHER_CONFIG = {
+        maxFileSize: 500 * 1024 * 1024, // 500MB
+        minFileSize: 1024, // 1KB
+        allowedExtensions: ['.exe'],
+        versionPattern: /^(\d+)\.(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:[-.]?(alpha|beta|rc|pre|dev)\.?(\d+)?)?$/,
+        uploadTimeout: 300000, // 5 minutos
+        debounceTime: 500 // 500ms para verificaciones
+    };
+    
+    // Crear instancia Vue para Upload Launcher
+    const uploadLauncherApp = new Vue({
         el: '#app',
         delimiters: ['[[', ']]'],
         mixins: [NotificationMixin, HttpMixin, UtilsMixin, SocketMixin],
-
+        
         data() {
             return {
-                // Datos del servidor
-                versions: window.UPLOAD_FILES_DATA.versions || [],
-                versionsData: window.UPLOAD_FILES_DATA.versionsData || [],
-                urls: window.UPLOAD_FILES_DATA.urls || {},
-
-                // Formulario
-                form: {},
-
-                // Archivos seleccionados
-                selectedFiles: [],
-
-                // Configuración de rutas
-                pathConfig: {
-                    basePath: 'bin/',
-                    paths: [] // Array de rutas para cada archivo
+                // Formulario principal
+                form: {
+                    version: '',
+                    isCurrent: true,
+                    releaseNotes: ''
                 },
-
-                // Estados
+                
+                // Opciones avanzadas
+                options: {
+                    replaceExisting: true,
+                    createBackup: true,
+                    updateJson: true,
+                    notifyClients: false
+                },
+                
+                // Archivo seleccionado
+                selectedFile: null,
+                
+                // Estados de validación
+                versionError: '',
+                fileError: '',
+                
+                // Estados de drag & drop
                 isDragOver: false,
-                uploading: false,
-                uploadProgress: 0,
-                uploadStatus: 'Preparando subida...',
-                uploadError: false,
-
-                // Errores de validación
-                errors: {
-                    files: ''
+                
+                // Estados de envío
+                submitting: false,
+                
+                // Progreso de upload
+                uploadProgress: {
+                    visible: false,
+                    percentage: 0,
+                    stage: 'Preparando...',
+                    eta: '',
+                    speed: ''
                 },
-
-                // Tipos de archivo permitidos
-                allowedExtensions: ['.exe', '.dll', '.txt', '.xml', '.json', '.png', '.jpg', '.gif'],
-
-                // Loading global
-                loading: false,
-                loadingMessage: 'Cargando...',
-
+                
+                // Vista previa
+                preview: {
+                    version: '1.0.0.0',
+                    status: 'Actual',
+                    badgeClass: 'bg-success',
+                    fileName: 'Sin archivo...',
+                    fileSize: '0 B',
+                    date: new Date().toLocaleDateString('es-ES'),
+                    notes: '',
+                    notesFormatted: '<em class="text-muted">Sin notas...</em>'
+                },
+                
+                // Verificación de versiones
+                versionCheck: {
+                    checking: false,
+                    exists: false,
+                    existingVersion: null,
+                    isCurrent: false,
+                    lastChecked: null
+                },
+                
+                // Warnings y validaciones
+                warnings: {
+                    replaceExisting: false,
+                    makeCurrentWarning: false,
+                    noBackupWarning: false,
+                    versionDowngrade: false
+                },
+                
+                // Versión actual del sistema
+                currentVersion: {
+                    loading: false,
+                    data: null,
+                    error: false
+                },
+                
                 // SocketIO
                 isSocketConnected: false,
-                socket: null
+                socket: null,
+                
+                // Timeouts para debouncing
+                timeouts: {
+                    versionCheck: null,
+                    preview: null
+                }
             };
         },
-
+        
         computed: {
-
-            /**
-             * Tamaño total de archivos seleccionados
-             */
-            totalFilesSize() {
-                const totalBytes = this.selectedFiles.reduce((sum, file) => sum + file.size, 0);
-                return this.formatFileSize(totalBytes);
-            },
-
             /**
              * Verificar si el formulario es válido
              */
             isFormValid() {
-                return this.selectedFiles.length > 0 &&
-                    !this.errors.files &&
-                    !this.uploading;
+                return this.form.version && 
+                       this.selectedFile && 
+                       !this.versionError && 
+                       !this.fileError && 
+                       !this.submitting;
+            },
+            
+            /**
+             * Verificar si hay warnings críticos
+             */
+            hasCriticalWarnings() {
+                return this.warnings.replaceExisting || 
+                       this.warnings.makeCurrentWarning || 
+                       this.warnings.versionDowngrade;
+            },
+            
+            /**
+             * Texto del botón de envío
+             */
+            submitButtonText() {
+                if (this.submitting) {
+                    return 'Procesando...';
+                }
+                
+                if (this.versionCheck.exists && this.options.replaceExisting) {
+                    return 'Reemplazar Versión';
+                }
+                
+                return 'Subir Launcher';
+            },
+            
+            /**
+             * Clase CSS del botón según el estado
+             */
+            submitButtonClass() {
+                if (this.submitting) {
+                    return 'btn btn-primary disabled';
+                }
+                
+                if (this.hasCriticalWarnings) {
+                    return 'btn btn-warning';
+                }
+                
+                return 'btn btn-primary';
             }
         },
-
+        
+        watch: {
+            // Vigilar cambios en la versión
+            'form.version': {
+                handler(newVersion) {
+                    this.versionError = '';
+                    
+                    if (newVersion && newVersion.length >= 5) {
+                        // Debounce la verificación de versión
+                        if (this.timeouts.versionCheck) {
+                            clearTimeout(this.timeouts.versionCheck);
+                        }
+                        
+                        this.timeouts.versionCheck = setTimeout(() => {
+                            this.checkVersionExists();
+                        }, LAUNCHER_CONFIG.debounceTime);
+                    }
+                    
+                    this.updatePreview();
+                },
+                immediate: false
+            },
+            
+            // Vigilar cambios en opciones críticas
+            'form.isCurrent': function() {
+                this.checkWarnings();
+                this.updatePreview();
+            },
+            
+            'options.createBackup': function() {
+                this.checkWarnings();
+            },
+            
+            'options.replaceExisting': function() {
+                this.checkWarnings();
+            },
+            
+            // Vigilar cambios en notas de release
+            'form.releaseNotes': function() {
+                this.updatePreview();
+            }
+        },
+        
         mounted() {
-            console.log('✅ Upload Files Vue montado');
-
+            console.log('✅ Upload Launcher Vue montado');
+            
+            // Cargar versión actual
+            this.loadCurrentVersion();
+            
             // Inicializar SocketIO
             this.initSocket();
-
-            // Pre-seleccionar versión latest si existe
-
-            console.log('Upload Files inicializado correctamente');
+            
+            // Actualizar vista previa inicial
+            this.updatePreview();
+            
+            // Configurar eventos de ventana
+            this.setupWindowEvents();
+            
+            console.log('Upload Launcher inicializado correctamente');
         },
-
+        
+        beforeDestroy() {
+            // Limpiar timeouts
+            Object.values(this.timeouts).forEach(timeout => {
+                if (timeout) clearTimeout(timeout);
+            });
+            
+            // Limpiar eventos de ventana
+            this.cleanupWindowEvents();
+        },
+        
         methods: {
-
             /**
-             * Triggear selección de archivos
+             * Inicializar SocketIO
              */
-            triggerFileSelect() {
-                this.$refs.fileInput.click();
+            initSocket() {
+                if (typeof io !== 'undefined' && !this.socket) {
+                    try {
+                        this.socket = io();
+                        this.isSocketConnected = true;
+                        
+                        this.socket.on('connect', () => {
+                            console.log('🔌 SocketIO conectado');
+                            this.isSocketConnected = true;
+                        });
+                        
+                        this.socket.on('disconnect', () => {
+                            console.log('🔌 SocketIO desconectado');
+                            this.isSocketConnected = false;
+                        });
+                        
+                    } catch (error) {
+                        console.warn('⚠️ No se pudo conectar SocketIO:', error);
+                    }
+                }
             },
-
+            
             /**
-             * Manejar selección de archivos
+             * Manejar eventos de drag & drop
              */
-            handleFileSelect(event) {
-                const files = Array.from(event.target.files);
-                this.processSelectedFiles(files);
-            },
-
-            /**
-             * Manejar drag over
-             */
-            handleDragOver(event) {
-                event.preventDefault();
+            handleDragEnter(e) {
+                e.preventDefault();
+                e.stopPropagation();
                 this.isDragOver = true;
             },
-
-            /**
-             * Manejar drag leave
-             */
-            handleDragLeave() {
+            
+            handleDragOver(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            },
+            
+            handleDragLeave(e) {
+                e.preventDefault();
+                e.stopPropagation();
                 this.isDragOver = false;
             },
-
-            /**
-             * Manejar drop de archivos
-             */
-            handleFileDrop(event) {
-                event.preventDefault();
+            
+            handleDrop(e) {
+                e.preventDefault();
+                e.stopPropagation();
                 this.isDragOver = false;
-
-                const files = Array.from(event.dataTransfer.files);
-                this.processSelectedFiles(files);
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    this.handleFileSelect(files[0]);
+                }
             },
-
+            
             /**
-             * Procesar archivos seleccionados
+             * Manejar selección de archivo
              */
-            processSelectedFiles(files) {
-                console.log('Procesando archivos:', files.length);
-
-                // Filtrar archivos válidos
-                const validFiles = files.filter(file => this.isValidFile(file));
-
-                if (validFiles.length === 0) {
-                    this.errors.files = 'No se seleccionaron archivos válidos. Revisa los formatos soportados.';
-                    return;
-                }
-
-                // Validar tamaño total
-                const currentSize = this.selectedFiles.reduce((sum, file) => sum + file.size, 0);
-                const newSize = validFiles.reduce((sum, file) => sum + file.size, 0);
-                const totalSize = currentSize + newSize;
-                const maxSize = 500 * 1024 * 1024; // 500MB
-
-                if (totalSize > maxSize) {
-                    this.errors.files = 'El tamaño total de archivos excede el límite de 500MB';
-                    return;
-                }
-
-                // Agregar archivos a la lista (evitar duplicados)
-                validFiles.forEach(file => {
-                    const exists = this.selectedFiles.some(existing =>
-                        existing.name === file.name && existing.size === file.size
-                    );
-
-                    if (!exists) {
-                        this.selectedFiles.push(file);
-                        // Agregar ruta por defecto
-                        this.pathConfig.paths.push(`bin/${file.name}`);
+            handleFileSelect(file) {
+                if (!file) {
+                    // Si es un evento, obtener el archivo
+                    if (file && file.target && file.target.files) {
+                        file = file.target.files[0];
                     }
+                }
+                
+                this.selectFile(file);
+            },
+            
+            /**
+             * Seleccionar archivo y validar
+             */
+            selectFile(file) {
+                this.fileError = '';
+                
+                if (!file) {
+                    this.selectedFile = null;
+                    this.updatePreview();
+                    return;
+                }
+                
+                // Validaciones del archivo
+                const validation = this.validateFile(file);
+                if (!validation.valid) {
+                    this.fileError = validation.error;
+                    this.showError('Archivo inválido', validation.error);
+                    return;
+                }
+                
+                // Archivo válido
+                this.selectedFile = file;
+                
+                console.log('✅ Archivo seleccionado:', {
+                    name: file.name,
+                    size: this.formatFileSize(file.size),
+                    type: file.type
                 });
-
-                this.errors.files = '';
-
-                // Actualizar input file
-                this.updateFileInput();
-
-                this.showSuccess(
-                    'Archivos agregados',
-                    `${validFiles.length} archivo(s) agregado(s) correctamente`
-                );
-
-                console.log('Archivos procesados exitosamente:', this.selectedFiles.length);
+                
+                this.updatePreview();
             },
-
+            
             /**
-             * Validar si un archivo es válido
+             * Validar archivo seleccionado
              */
-            isValidFile(file) {
-                const extension = this.getFileExtension(file.name).toLowerCase();
-                return this.allowedExtensions.includes(extension);
-            },
-
-            /**
-             * Obtener extensión de archivo
-             */
-            getFileExtension(filename) {
-                const lastDot = filename.lastIndexOf('.');
-                return lastDot > 0 ? filename.substring(lastDot) : '';
-            },
-
-            /**
-             * Obtener icono según extensión de archivo
-             */
-            getFileIcon(filename) {
-                const ext = this.getFileExtension(filename).toLowerCase();
-                const icons = {
-                    '.exe': '<i class="bi bi-app text-primary"></i>',
-                    '.dll': '<i class="bi bi-gear text-secondary"></i>',
-                    '.xml': '<i class="bi bi-code text-info"></i>',
-                    '.json': '<i class="bi bi-code text-info"></i>',
-                    '.txt': '<i class="bi bi-file-text text-success"></i>',
-                    '.png': '<i class="bi bi-image text-warning"></i>',
-                    '.jpg': '<i class="bi bi-image text-warning"></i>',
-                    '.gif': '<i class="bi bi-image text-warning"></i>'
-                };
-
-                return icons[ext] || '<i class="bi bi-file-earmark text-muted"></i>';
-            },
-
-            /**
-             * Remover archivo de la lista
-             */
-            removeFile(index) {
-                this.selectedFiles.splice(index, 1);
-                this.pathConfig.paths.splice(index, 1);
-                this.updateFileInput();
-
-                if (this.selectedFiles.length === 0) {
-                    this.errors.files = '';
+            validateFile(file) {
+                if (!file) {
+                    return { valid: false, error: 'No se seleccionó archivo' };
                 }
-
-                this.showInfo('Archivo removido', 'El archivo ha sido removido de la lista');
-            },
-
-            /**
-             * Limpiar todos los archivos
-             */
-            clearAllFiles() {
-                this.selectedFiles = [];
-                this.pathConfig.paths = [];
-                this.errors.files = '';
-                this.$refs.fileInput.value = '';
-
-                this.showInfo('Archivos limpiados', 'Todos los archivos han sido removidos');
-            },
-
-            /**
-             * Aplicar ruta base a todos los archivos
-             */
-            applyBasePathToAll() {
-                // ✅ FIX: Verificar si basePath está vacío
-                let basePath = this.pathConfig.basePath.trim();
-
-                if (basePath === '') {
-                    // Si está vacío, archivos van en la raíz (sin carpeta)
-                    this.pathConfig.paths = this.selectedFiles.map(file => file.name);
-                } else {
-                    // Si tiene contenido, asegurar que termine en '/'
-                    if (!basePath.endsWith('/')) {
-                        basePath += '/';
-                    }
-                    this.pathConfig.paths = this.selectedFiles.map(file => basePath + file.name);
+                
+                // Verificar tamaño
+                if (file.size > LAUNCHER_CONFIG.maxFileSize) {
+                    return { 
+                        valid: false, 
+                        error: `Archivo demasiado grande. Máximo: ${this.formatFileSize(LAUNCHER_CONFIG.maxFileSize)}` 
+                    };
                 }
-
-                this.showSuccess('Rutas actualizadas', 'Se aplicó la ruta base a todos los archivos');
+                
+                if (file.size < LAUNCHER_CONFIG.minFileSize) {
+                    return { valid: false, error: 'Archivo demasiado pequeño (mínimo 1KB)' };
+                }
+                
+                // Verificar extensión
+                const extension = '.' + file.name.split('.').pop().toLowerCase();
+                if (!LAUNCHER_CONFIG.allowedExtensions.includes(extension)) {
+                    return { 
+                        valid: false, 
+                        error: `Extensión no permitida. Solo: ${LAUNCHER_CONFIG.allowedExtensions.join(', ')}` 
+                    };
+                }
+                
+                return { valid: true };
             },
-
+            
             /**
-             * Actualizar input file para reflejar la selección
+             * Validar formato de versión
              */
-            updateFileInput() {
-                const dataTransfer = new DataTransfer();
-                this.selectedFiles.forEach(file => dataTransfer.items.add(file));
-                this.$refs.fileInput.files = dataTransfer.files;
-            },
-
-            /**
-             * Simular progreso de subida
-             */
-            simulateUploadProgress() {
-                this.uploadProgress = 0;
-                this.uploadError = false;
-
-                const progressInterval = setInterval(() => {
-                    if (this.uploadError) {
-                        clearInterval(progressInterval);
+            validateVersion() {
+                this.versionError = '';
+                
+                if (!this.form.version) {
+                    return;
+                }
+                
+                // Verificar formato con regex
+                if (!LAUNCHER_CONFIG.versionPattern.test(this.form.version)) {
+                    this.versionError = 'Formato inválido. Use: X.Y.Z.W (ej: 1.2.3.4)';
+                    return;
+                }
+                
+                // Verificar rangos numéricos
+                const parts = this.form.version.split('.');
+                for (let part of parts) {
+                    const num = parseInt(part);
+                    if (isNaN(num) || num < 0 || num > 9999) {
+                        this.versionError = 'Cada parte debe ser un número entre 0 y 9999';
                         return;
                     }
-
-                    const increment = Math.random() * 10;
-                    this.uploadProgress = Math.min(this.uploadProgress + increment, 95);
-
-                    // Actualizar mensaje según progreso
-                    if (this.uploadProgress < 25) {
-                        this.uploadStatus = 'Validando archivos...';
-                    } else if (this.uploadProgress < 50) {
-                        this.uploadStatus = 'Subiendo archivos...';
-                    } else if (this.uploadProgress < 75) {
-                        this.uploadStatus = 'Procesando en el servidor...';
-                    } else {
-                        this.uploadStatus = 'Calculando hashes MD5...';
-                    }
-                }, 200);
-
-                return progressInterval;
+                }
+                
+                console.log('✅ Versión válida:', this.form.version);
             },
-
+            
             /**
-             * Finalizar progreso de subida con éxito
+             * Verificar si la versión ya existe
              */
-            completeUploadProgress() {
-                this.uploadProgress = 100;
-                this.uploadStatus = '¡Archivos subidos exitosamente!';
-            },
-
-            /**
-             * Manejar error en upload
-             */
-            handleUploadError(error) {
-                this.uploadError = true;
-                this.uploadStatus = `Error: ${error}`;
-            },
-
-            /**
-             * Enviar formulario para subir archivos
-             */
-            async submitFiles() {
-                console.log('Enviando formulario de archivos...');
-
-                if (this.selectedFiles.length === 0) {
-                    this.showError('Formulario inválido', 'Selecciona al menos un archivo');
+            async checkVersionExists() {
+                if (!this.form.version || this.versionError) {
                     return;
                 }
-
-                // Confirmar antes de subir
-                const confirmed = await this.showConfirmation(
-                    '¿Subir archivos?',
-                    `Se subirán ${this.selectedFiles.length} archivo(s)` +
-                    `Tamaño total: ${this.totalFilesSize}`,
-                    'Sí, subir'
-                );
-
-                if (!confirmed) return;
-
-                this.uploading = true;
-                const progressInterval = this.simulateUploadProgress();
-
+                
+                this.versionCheck.checking = true;
+                this.versionCheck.exists = false;
+                this.warnings.replaceExisting = false;
+                
+                try {
+                    // Usar método compatible con tu estructura
+                    const response = await axios.get(`/admin/api/launcher/check-version/${encodeURIComponent(this.form.version)}`);
+                    
+                    if (response.data.exists) {
+                        this.versionCheck.exists = true;
+                        this.versionCheck.existingVersion = response.data.version;
+                        this.versionCheck.isCurrent = response.data.is_current;
+                        this.versionCheck.lastChecked = new Date();
+                        this.warnings.replaceExisting = true;
+                        
+                        console.log('⚠️ Versión existente detectada:', response.data);
+                        
+                        // Warning especial si es la versión actual
+                        if (response.data.is_current) {
+                            this.showWarning(
+                                'Versión Actual Detectada',
+                                `La versión ${this.form.version} ya existe y es la versión ACTUAL en producción.`
+                            );
+                        }
+                    } else {
+                        console.log('✅ Versión nueva:', this.form.version);
+                    }
+                    
+                } catch (error) {
+                    console.error('Error verificando versión:', error);
+                    // No mostrar error al usuario, solo log
+                } finally {
+                    this.versionCheck.checking = false;
+                    this.checkWarnings();
+                }
+            },
+            
+            /**
+             * Verificar warnings antes de proceder
+             */
+            checkWarnings() {
+                // Reset warnings
+                this.warnings.makeCurrentWarning = false;
+                this.warnings.noBackupWarning = false;
+                this.warnings.versionDowngrade = false;
+                
+                // Warning si va a marcar como current sin backup
+                if (this.form.isCurrent && !this.options.createBackup) {
+                    this.warnings.noBackupWarning = true;
+                }
+                
+                // Warning si va a cambiar la versión actual
+                if (this.form.isCurrent) {
+                    this.warnings.makeCurrentWarning = true;
+                }
+                
+                // Warning si es un downgrade
+                if (this.currentVersion.data && this.form.version) {
+                    try {
+                        if (this.compareVersions(this.form.version, this.currentVersion.data.version) < 0) {
+                            this.warnings.versionDowngrade = true;
+                        }
+                    } catch (e) {
+                        // Ignore comparison errors
+                    }
+                }
+            },
+            
+            /**
+             * Comparar versiones semánticas
+             */
+            compareVersions(version1, version2) {
+                const parseVersion = (v) => v.split('.').map(n => parseInt(n) || 0);
+                const v1 = parseVersion(version1);
+                const v2 = parseVersion(version2);
+                
+                for (let i = 0; i < Math.max(v1.length, v2.length); i++) {
+                    const a = v1[i] || 0;
+                    const b = v2[i] || 0;
+                    
+                    if (a < b) return -1;
+                    if (a > b) return 1;
+                }
+                
+                return 0;
+            },
+            
+            /**
+             * Actualizar vista previa en tiempo real
+             */
+            updatePreview() {
+                // Debounce la actualización
+                if (this.timeouts.preview) {
+                    clearTimeout(this.timeouts.preview);
+                }
+                
+                this.timeouts.preview = setTimeout(() => {
+                    // Actualizar versión
+                    this.preview.version = this.form.version || '1.0.0.0';
+                    
+                    // Actualizar estado
+                    if (this.form.isCurrent) {
+                        this.preview.status = 'Actual';
+                        this.preview.badgeClass = 'bg-success';
+                    } else {
+                        this.preview.status = 'Archivada';
+                        this.preview.badgeClass = 'bg-secondary';
+                    }
+                    
+                    // Actualizar archivo
+                    if (this.selectedFile) {
+                        this.preview.fileName = this.selectedFile.name;
+                        this.preview.fileSize = this.formatFileSize(this.selectedFile.size);
+                    } else {
+                        this.preview.fileName = 'Sin archivo...';
+                        this.preview.fileSize = '0 B';
+                    }
+                    
+                    // Actualizar notas
+                    this.preview.notes = this.form.releaseNotes.trim();
+                    if (this.preview.notes) {
+                        this.preview.notesFormatted = this.preview.notes.replace(/\n/g, '<br>');
+                    } else {
+                        this.preview.notesFormatted = '<em class="text-muted">Sin notas...</em>';
+                    }
+                    
+                    // Validar versión
+                    this.validateVersion();
+                }, 100);
+            },
+            
+            /**
+             * Activar input de archivo
+             */
+            triggerFileInput() {
+                if (this.$refs.fileInput) {
+                    this.$refs.fileInput.click();
+                }
+            },
+            
+            /**
+             * Limpiar archivo seleccionado
+             */
+            clearFile() {
+                this.selectedFile = null;
+                this.fileError = '';
+                
+                if (this.$refs.fileInput) {
+                    this.$refs.fileInput.value = '';
+                }
+                
+                this.updatePreview();
+                console.log('🗑️ Archivo limpiado');
+            },
+            
+            /**
+             * Cargar información de versión actual
+             */
+            async loadCurrentVersion() {
+                this.currentVersion.loading = true;
+                this.currentVersion.error = false;
+                
+                try {
+                    const response = await axios.get('/admin/api/launcher/current');
+                    
+                    if (response.data.found) {
+                        this.currentVersion.data = response.data;
+                        console.log('✅ Versión actual cargada:', response.data);
+                    } else {
+                        console.log('ℹ️ No hay versión actual configurada');
+                    }
+                    
+                } catch (error) {
+                    this.currentVersion.error = true;
+                    console.warn('⚠️ No se pudo cargar la versión actual:', error);
+                } finally {
+                    this.currentVersion.loading = false;
+                }
+            },
+            
+            /**
+             * Validación completa antes de envío
+             */
+            async validateBeforeSubmit() {
+                console.log('🔍 Validando antes de envío...');
+                
+                // Validación básica del formulario
+                if (!this.isFormValid) {
+                    this.showError('Formulario Inválido', 'Por favor corrige todos los errores antes de continuar.');
+                    return false;
+                }
+                
+                // Re-verificar versión si es necesario
+                if (!this.versionCheck.checking) {
+                    await this.checkVersionExists();
+                }
+                
+                // Si existe y no está marcado reemplazar
+                if (this.versionCheck.exists && !this.options.replaceExisting) {
+                    this.showError(
+                        'Versión Ya Existe',
+                        `La versión ${this.form.version} ya existe. Active "Reemplazar si existe" para sobrescribirla.`
+                    );
+                    return false;
+                }
+                
+                // Confirmación especial para versión actual
+                if (this.versionCheck.exists && this.versionCheck.isCurrent) {
+                    const confirmed = await this.showConfirmation(
+                        '⚠️ REEMPLAZAR VERSIÓN ACTUAL',
+                        `¿Está ABSOLUTAMENTE SEGURO de que desea reemplazar la versión ${this.form.version} que está actualmente en PRODUCCIÓN?\n\nEsta acción afectará a todos los usuarios conectados.`
+                    );
+                    
+                    if (!confirmed) {
+                        console.log('❌ Usuario canceló reemplazo de versión actual');
+                        return false;
+                    }
+                }
+                
+                // Confirmación si va a marcar como current
+                if (this.form.isCurrent && !this.versionCheck.isCurrent) {
+                    const confirmed = await this.showConfirmation(
+                        'Cambiar Versión Actual',
+                        `¿Desea establecer la versión ${this.form.version} como la nueva versión OFICIAL?\n\nEsto desactivará automáticamente la versión actual y notificará a todos los clientes.`
+                    );
+                    
+                    if (!confirmed) {
+                        console.log('❌ Usuario canceló cambio de versión actual');
+                        return false;
+                    }
+                }
+                
+                console.log('✅ Validación completada exitosamente');
+                return true;
+            },
+            
+            /**
+             * Enviar formulario principal
+             */
+            async submitLauncher() {
+                console.log('🚀 Iniciando envío de launcher...');
+                
+                // Validación previa completa
+                const isValid = await this.validateBeforeSubmit();
+                if (!isValid) {
+                    return;
+                }
+                
+                this.submitting = true;
+                this.startUploadProgress();
+                
                 try {
                     // Preparar FormData
                     const formData = new FormData();
-
-                    // Agregar archivos
-                    this.selectedFiles.forEach(file => {
-                        formData.append('files', file);
+                    formData.append('launcher_file', this.selectedFile);
+                    formData.append('version', this.form.version);
+                    formData.append('release_notes', this.form.releaseNotes);
+                    
+                    // Opciones booleanas (usando el formato que tu backend espera)
+                    if (this.form.isCurrent) formData.append('is_current', 'on');
+                    if (this.options.replaceExisting) formData.append('replace_existing', 'on');
+                    if (this.options.createBackup) formData.append('create_backup', 'on');
+                    if (this.options.updateJson) formData.append('update_json', 'on');
+                    if (this.options.notifyClients) formData.append('notify_clients', 'on');
+                    
+                    // Log detallado de la operación
+                    console.log('📤 Enviando con opciones:', {
+                        version: this.form.version,
+                        fileName: this.selectedFile.name,
+                        fileSize: this.formatFileSize(this.selectedFile.size),
+                        isCurrent: this.form.isCurrent,
+                        replaceExisting: this.options.replaceExisting,
+                        createBackup: this.options.createBackup,
+                        versionExists: this.versionCheck.exists
                     });
-
-                    // Agregar rutas relativas
-                    this.selectedFiles.forEach((file, index) => {
-                        const relativePath = this.pathConfig.paths[index] || `${file.name}`;
-                        formData.append(`relative_path_${index}`, relativePath);
-                    });
-
-                    console.log('Enviando datos:', {
-                        files_count: this.selectedFiles.length,
-                        total_size: this.selectedFiles.reduce((sum, file) => sum + file.size, 0)
-                    });
-
-                    // Enviar petición
-                    const response = await axios.post(this.urls.submit, formData, {
+                    
+                    // Realizar petición con axios (compatible con tu estructura)
+                    const response = await axios.post(window.location.href, formData, {
                         headers: {
                             'Content-Type': 'multipart/form-data'
                         },
-                        timeout: 300000 // 5 minutos timeout
-                    });
-
-                    clearInterval(progressInterval);
-
-                    if (response.status === 200) {
-                        this.completeUploadProgress();
-
-                        this.showSuccess(
-                            '¡Archivos subidos!',
-                            `${this.selectedFiles.length} archivo(s) subido(s) exitosamente`
-                        );
-
-                        // Emitir evento SocketIO si está conectado
-                        if (this.isSocketConnected) {
-                            this.emitSocket('files_uploaded', {
-                                count: this.selectedFiles.length,
-                                total_size: this.selectedFiles.reduce((sum, file) => sum + file.size, 0)
-                            });
+                        timeout: LAUNCHER_CONFIG.uploadTimeout,
+                        onUploadProgress: (progressEvent) => {
+                            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                            this.updateUploadProgress(percentCompleted, progressEvent);
                         }
-
-                        // Redirigir después de un momento
+                    });
+                    
+                    if (response.status === 200) {
+                        // Proceso completado exitosamente
+                        this.completeUploadProgress();
+                        
+                        // Determinar mensaje de éxito
+                        let successMessage = `La versión ${this.form.version} ha sido procesada exitosamente.`;
+                        
+                        if (this.form.isCurrent) {
+                            successMessage += ' Esta es ahora la versión OFICIAL del launcher.';
+                        } else {
+                            successMessage += ' Ha sido guardada como versión archivada.';
+                        }
+                        
+                        this.showSuccess('🎉 Launcher Subido Exitosamente', successMessage);
+                        
+                        // Emitir evento SocketIO para notificaciones en tiempo real
+                        if (this.isSocketConnected) {
+                            this.emitSocket('launcher_uploaded', {
+                                version: this.form.version,
+                                is_current: this.form.isCurrent,
+                                replaced_existing: this.versionCheck.exists,
+                                timestamp: new Date().toISOString()
+                            });
+                            
+                            console.log('📡 Evento SocketIO emitido');
+                        }
+                        
+                        // Redirigir después de mostrar éxito
                         setTimeout(() => {
-                            window.location.href = '/admin/files';
-                        }, 2000);
+                            window.location.href = '/admin/launcher';
+                        }, 3000);
                     }
-
+                    
                 } catch (error) {
-                    clearInterval(progressInterval);
-                    console.error('Error subiendo archivos:', error);
-
-                    let errorMessage = 'Error inesperado al subir archivos';
-
+                    this.errorUploadProgress();
+                    console.error('❌ Error subiendo launcher:', error);
+                    
+                    // Determinar mensaje de error específico
+                    let errorMessage = 'Error inesperado al subir el launcher.';
+                    
                     if (error.response) {
-                        switch (error.response.status) {
+                        const status = error.response.status;
+                        const data = error.response.data;
+                        
+                        switch (status) {
                             case 400:
-                                errorMessage = 'Datos del formulario inválidos';
+                                errorMessage = 'Datos del formulario inválidos. Verifique todos los campos.';
+                                break;
+                            case 409:
+                                errorMessage = 'Esta versión ya existe y no se permite reemplazar.';
                                 break;
                             case 413:
-                                errorMessage = 'Los archivos son demasiado grandes';
+                                errorMessage = `El archivo es demasiado grande. Máximo permitido: ${this.formatFileSize(LAUNCHER_CONFIG.maxFileSize)}.`;
                                 break;
                             case 422:
-                                errorMessage = error.response.data?.message || 'Archivos no válidos';
+                                errorMessage = data?.message || 'Los datos de la versión son inválidos.';
                                 break;
                             case 500:
-                                errorMessage = 'Error interno del servidor';
+                                errorMessage = 'Error interno del servidor. Contacte al administrador.';
                                 break;
                             default:
-                                errorMessage = error.response.data?.message || 'Error del servidor';
+                                errorMessage = data?.message || `Error del servidor (${status}).`;
                         }
                     } else if (error.request) {
-                        errorMessage = 'No se pudo conectar con el servidor';
+                        errorMessage = 'No se pudo conectar con el servidor. Verifique su conexión a internet.';
+                    } else if (error.code === 'ECONNABORTED') {
+                        errorMessage = 'La subida tardó demasiado tiempo. Intente con un archivo más pequeño.';
                     }
-
-                    this.handleUploadError(errorMessage);
-                    this.showError('Error al subir archivos', errorMessage);
-
+                    
+                    this.showError('Error al Subir Launcher', errorMessage);
+                    
                 } finally {
-                    // No resetear uploading aquí para mantener el estado de progreso visible
+                    this.submitting = false;
                 }
             },
-
+            
             /**
-             * Resetear formulario completo
+             * Iniciar progreso de upload
              */
-            resetForm() {
-                this.form.versionId = '';
-                this.selectedFiles = [];
-                this.pathConfig.paths = [];
-                this.errors = { version: '', files: '' };
-                this.uploading = false;
-                this.uploadProgress = 0;
-                this.uploadError = false;
-                this.$refs.fileInput.value = '';
-
-                this.showInfo('Formulario reseteado', 'Puedes comenzar de nuevo');
+            startUploadProgress() {
+                this.uploadProgress.visible = true;
+                this.uploadProgress.percentage = 0;
+                this.uploadProgress.stage = 'Preparando...';
+                this.uploadProgress.eta = '';
+                this.uploadProgress.speed = '';
+                this.uploadStartTime = Date.now();
+                
+                console.log('📊 Progreso de upload iniciado');
             },
-
+            
             /**
-             * Manejar notificaciones desde SocketIO
+             * Actualizar progreso de upload
              */
-            handleSocketNotification(data) {
-                // Llamar al método padre
-                SocketMixin.methods.handleSocketNotification.call(this, data);
-
-                // Manejar notificaciones específicas
-                if (data.data && data.data.action) {
-                    switch (data.data.action) {
-                        case 'version_created':
-                            // Nueva versión disponible, recargar lista
-                            this.showInfo(
-                                'Nueva versión disponible',
-                                `La versión ${data.data.version} está disponible para subir archivos`
-                            );
-                            break;
-
-                        case 'files_conflict':
-                            this.showWarning(
-                                'Conflicto de archivos',
-                                'Otro usuario está subiendo archivos para esta versión'
-                            );
-                            break;
-                    }
-                }
-            },
-
-            /**
-             * Establecer estado de carga global
-             */
-            setLoading(isLoading, message = 'Cargando...') {
-                this.loading = isLoading;
-                this.loadingMessage = message;
-            },
-
-            /**
-             * Probar conexión SocketIO
-             */
-            testSocketConnection() {
-                if (this.isSocketConnected) {
-                    this.emitSocket('ping');
-                    this.showInfo('Test SocketIO', 'Ping enviado al servidor');
+            updateUploadProgress(percentage, progressEvent = null) {
+                this.uploadProgress.percentage = Math.min(percentage, 100);
+                
+                // Determinar etapa según progreso
+                if (percentage < 25) {
+                    this.uploadProgress.stage = 'Subiendo archivo...';
+                } else if (percentage < 75) {
+                    this.uploadProgress.stage = 'Procesando...';
+                } else if (percentage < 95) {
+                    this.uploadProgress.stage = 'Validando...';
                 } else {
-                    this.showWarning('Sin conexión', 'SocketIO no está conectado');
+                    this.uploadProgress.stage = 'Finalizando...';
                 }
-            }
-        },
-
-        watch: {
-
+                
+                // Calcular velocidad y ETA si hay datos del evento
+                if (progressEvent && progressEvent.loaded && progressEvent.total && this.uploadStartTime) {
+                    const elapsed = (Date.now() - this.uploadStartTime) / 1000;
+                    const speed = progressEvent.loaded / elapsed;
+                    const remaining = progressEvent.total - progressEvent.loaded;
+                    const eta = remaining / speed;
+                    
+                    this.uploadProgress.speed = this.formatFileSize(speed) + '/s';
+                    this.uploadProgress.eta = this.formatTime(eta);
+                }
+            },
+            
             /**
-             * Observar cambios en archivos seleccionados
+             * Completar progreso de upload
              */
-            selectedFiles: {
-                handler(newFiles) {
-                    console.log('Archivos seleccionados cambiados:', newFiles.length);
-
-                    // Sincronizar array de rutas con archivos
-                    while (this.pathConfig.paths.length < newFiles.length) {
-                        const file = newFiles[this.pathConfig.paths.length];
-                        this.pathConfig.paths.push(`bin/${file.name}`);
+            completeUploadProgress() {
+                this.uploadProgress.percentage = 100;
+                this.uploadProgress.stage = '¡Completado!';
+                this.uploadProgress.eta = '';
+                
+                // Ocultar después de un momento
+                setTimeout(() => {
+                    this.uploadProgress.visible = false;
+                }, 2000);
+                
+                console.log('✅ Progreso de upload completado');
+            },
+            
+            /**
+             * Marcar error en progreso de upload
+             */
+            errorUploadProgress() {
+                this.uploadProgress.stage = 'Error al subir';
+                this.uploadProgress.percentage = 0;
+                
+                // Ocultar después de un momento
+                setTimeout(() => {
+                    this.uploadProgress.visible = false;
+                }, 3000);
+                
+                console.log('❌ Error en progreso de upload');
+            },
+            
+            /**
+             * Formatear tamaño de archivo
+             */
+            formatFileSize(bytes) {
+                if (bytes === 0) return '0 B';
+                
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            },
+            
+            /**
+             * Formatear tiempo en segundos
+             */
+            formatTime(seconds) {
+                if (!seconds || !isFinite(seconds)) return '';
+                
+                const mins = Math.floor(seconds / 60);
+                const secs = Math.floor(seconds % 60);
+                
+                if (mins > 0) {
+                    return `${mins}m ${secs}s`;
+                } else {
+                    return `${secs}s`;
+                }
+            },
+            
+            /**
+             * Mostrar confirmación con promesa
+             */
+            showConfirmation(title, message) {
+                return new Promise((resolve) => {
+                    // Si tienes un modal de confirmación personalizado, úsalo aquí
+                    // Por ahora usar confirm() nativo con mejor formato
+                    const result = confirm(`${title}\n\n${message}`);
+                    resolve(result);
+                });
+            },
+            
+            /**
+             * Emitir evento SocketIO
+             */
+            emitSocket(event, data) {
+                if (this.socket && this.isSocketConnected) {
+                    this.socket.emit(event, data);
+                    console.log('📡 Evento SocketIO emitido:', event, data);
+                }
+            },
+            
+            /**
+             * Configurar eventos de ventana
+             */
+            setupWindowEvents() {
+                // Prevenir pérdida de datos al cerrar ventana
+                this.beforeUnloadHandler = (e) => {
+                    if (this.submitting) {
+                        e.preventDefault();
+                        e.returnValue = 'Hay una subida en progreso. ¿Está seguro de que desea salir?';
+                        return e.returnValue;
                     }
-
-                    // Remover rutas excedentes
-                    if (this.pathConfig.paths.length > newFiles.length) {
-                        this.pathConfig.paths.splice(newFiles.length);
-                    }
-                },
-                deep: true
+                };
+                
+                window.addEventListener('beforeunload', this.beforeUnloadHandler);
+            },
+            
+            /**
+             * Limpiar eventos de ventana
+             */
+            cleanupWindowEvents() {
+                if (this.beforeUnloadHandler) {
+                    window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+                }
             }
         }
     });
-
-    // Exponer para debugging en desarrollo
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        window.uploadFilesApp = uploadFilesApp;
-        console.log('✅ Upload Files app disponible en window.uploadFilesApp para debugging');
-    }
-
-    console.log('✅ Upload Files Vue.js inicializado exitosamente');
+    
+    console.log('✅ Upload Launcher Vue inicializado exitosamente');
 });

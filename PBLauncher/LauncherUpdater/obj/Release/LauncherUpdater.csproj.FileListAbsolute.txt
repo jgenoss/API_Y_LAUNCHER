@@ -12,3 +12,10 @@ E:\launcher src\LauncherUpdater\obj\Release\LauncherUpdater.csproj.AssemblyRefer
 E:\launcher src\LauncherUpdater\obj\Release\LauncherUpdater.csproj.CoreCompileInputs.cache
 E:\launcher src\LauncherUpdater\obj\Release\LauncherUpdater.exe
 E:\launcher src\LauncherUpdater\obj\Release\LauncherUpdater.pdb
+D:\Usuarios\JGENOSS\Documents\GitHub\API_Y_LAUNCHER\PBLauncher\LauncherUpdater\bin\Release\LauncherUpdater.exe.config
+D:\Usuarios\JGENOSS\Documents\GitHub\API_Y_LAUNCHER\PBLauncher\LauncherUpdater\bin\Release\LauncherUpdater.exe
+D:\Usuarios\JGENOSS\Documents\GitHub\API_Y_LAUNCHER\PBLauncher\LauncherUpdater\bin\Release\LauncherUpdater.pdb
+D:\Usuarios\JGENOSS\Documents\GitHub\API_Y_LAUNCHER\PBLauncher\LauncherUpdater\obj\Release\LauncherUpdater.csproj.AssemblyReference.cache
+D:\Usuarios\JGENOSS\Documents\GitHub\API_Y_LAUNCHER\PBLauncher\LauncherUpdater\obj\Release\LauncherUpdater.csproj.CoreCompileInputs.cache
+D:\Usuarios\JGENOSS\Documents\GitHub\API_Y_LAUNCHER\PBLauncher\LauncherUpdater\obj\Release\LauncherUpdater.exe
+D:\Usuarios\JGENOSS\Documents\GitHub\API_Y_LAUNCHER\PBLauncher\LauncherUpdater\obj\Release\LauncherUpdater.pdb
